@@ -77,7 +77,7 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   static const _paginationThreshold = 480.0;
-  static const _categories = SearchCategory.values;
+  static const _categories = [SearchCategory.book];
   static const _listViewPreference = 'search_list_view';
   static const _minimumScorePreference = 'search_minimum_score';
 
@@ -161,7 +161,7 @@ class _SearchPageState extends State<SearchPage> {
   void initState() {
     super.initState();
     // 首帧就停在该页签：分区入口（短剧/漫剧）进来的搜索不该先闪「综合」。
-    _tabIndex = _categories.indexOf(widget.initialCategory);
+    _tabIndex = _categories.indexOf(widget.initialCategory).clamp(0, _categories.length - 1);
     _scrollController.addListener(_onScroll);
     _loadHistory();
     unawaited(_loadLayout());

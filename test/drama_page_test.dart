@@ -1082,11 +1082,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('the bottom bar lists 短剧 right after 首页', (tester) async {
+  testWidgets('the bottom bar has no 短剧 and the app opens on 书架', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(400, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    addTearDown(() => dramaLightPageNotifier.value = false);
     addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
+    // 书架是首屏，它读的阅读历史在真实 App 里由启动门先打开。
+    SharedPreferences.setMockInitialValues({});
+    await tester.runAsync(() => LibraryStore.instance.init());
 
     await tester.pumpWidget(
       _scope(
@@ -1095,55 +1099,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Scoped to the bar: the home page's own category strip also has a 短剧 entry.
     Finder navLabel(String label) => find.descendant(
       of: find.byType(NavigationBar),
       matching: find.text(label),
     );
 
-    final home = tester.getCenter(navLabel('首页')).dx;
-    final drama = tester.getCenter(navLabel('短剧')).dx;
-    final library = tester.getCenter(navLabel('书架')).dx;
+    final shelf = tester.getCenter(navLabel('书架')).dx;
+    final store = tester.getCenter(navLabel('书城')).dx;
     final mine = tester.getCenter(navLabel('我的')).dx;
-    expect(home, lessThan(drama));
-    expect(drama, lessThan(library));
-    expect(library, lessThan(mine));
-
-    // The destination is lazy: nothing of the 短剧 feed is built before a tap.
+    expect(shelf, lessThan(store));
+    expect(store, lessThan(mine));
+    expect(navLabel('短剧'), findsNothing);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      0,
+    );
     expect(find.byType(DramaPage), findsNothing);
-    await tester.tap(navLabel('短剧'));
-    await tester.pumpAndSettle();
-    expect(find.byType(DramaPage), findsOneWidget);
-    expect(find.byKey(const Key('drama_feed')), findsOneWidget);
-    // 用户已移除右侧追剧入口。
-    expect(find.text('追剧'), findsNothing);
-
-    // 浅色外观下：推荐是视频流，dock 仍是深色玻璃；切到看剧（浅色页）后
-    // dock 跟着回浅色，不能页面是奶白、dock 还是一条黑的。
-    Color dockColor() {
-      final container = tester.widget<Container>(
-        find
-            .ancestor(
-              of: find.byType(NavigationBar),
-              matching: find.byType(Container),
-            )
-            .first,
-      );
-      return (container.decoration! as BoxDecoration).color!;
-    }
-
-    expect(dockColor(), const Color(0xFF161619).withValues(alpha: 0.72));
-    await tester.tap(find.text('看剧'));
-    await tester.pumpAndSettle();
-    expect(dockColor(), Colors.white.withValues(alpha: 0.82));
-    await tester.tap(find.text('推荐'));
-    await tester.pumpAndSettle();
-    expect(dockColor(), const Color(0xFF161619).withValues(alpha: 0.72));
-    // The shell mounts its own DramaPage without seams, so its inline session
-    // starts a real directory request here. Advance past the client timeout to
-    // drain that timer, which would otherwise outlive the test.
-    await tester.pump(const Duration(seconds: 25));
-    await tester.pump();
     expect(tester.takeException(), isNull);
   });
 
@@ -1814,9 +1785,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('桌面 feed：手动暂停后切窗口/最小化再回来都不许自动恢复', (
-    tester,
-  ) async {
+  testWidgets('桌面 feed：手动暂停后切窗口/最小化再回来都不许自动恢复', (tester) async {
     SharedPreferences.setMockInitialValues({});
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     await tester.binding.setSurfaceSize(const Size(1280, 800));
@@ -1878,9 +1847,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('桌面 feed：播放中被最小化是可见性暂停，切回自动恢复', (
-    tester,
-  ) async {
+  testWidgets('桌面 feed：播放中被最小化是可见性暂停，切回自动恢复', (tester) async {
     SharedPreferences.setMockInitialValues({});
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     await tester.binding.setSurfaceSize(const Size(1280, 800));
@@ -1978,9 +1945,7 @@ void main() {
     expect(find.text('1 / 2'), findsNothing);
   });
 
-  testWidgets('桌面 feed 顶栏只剩频道条一行，搜索入口收敛到频道条图标', (
-    tester,
-  ) async {
+  testWidgets('桌面 feed 顶栏只剩频道条一行，搜索入口收敛到频道条图标', (tester) async {
     SharedPreferences.setMockInitialValues({});
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     await tester.binding.setSurfaceSize(const Size(1280, 800));
@@ -1993,10 +1958,7 @@ void main() {
 
     // 搜索行不渲染；分区搜索只剩频道条右端的图标一处。
     expect(find.byKey(const Key('drama_search_button')), findsNothing);
-    expect(
-      find.byKey(const Key('drama_strip_search_button')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('drama_strip_search_button')), findsOneWidget);
     // 播放器顶端只让出频道条一行（38），不再是搜索行 + 频道条的 76。
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('desktop-feed-player'))).dy,

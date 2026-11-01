@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../models/media_item.dart';
 import '../services/poster_cache.dart';
+import 'bookshelf_unread.dart';
 import 'home/home_design.dart';
 import 'shelf/shelf_design.dart';
 
@@ -593,6 +594,9 @@ class BookshelfGridCard extends StatelessWidget {
   final MediaItem item;
   final String? badgeText;
   final String? infoText;
+
+  /// 「N章未读」，高亮显示在副信息行开头。
+  final String? unreadText;
   final bool editing;
   final bool selected;
   final VoidCallback onTap;
@@ -604,6 +608,7 @@ class BookshelfGridCard extends StatelessWidget {
     required this.onTap,
     this.badgeText,
     this.infoText,
+    this.unreadText,
     this.editing = false,
     this.selected = false,
     this.onLongPress,
@@ -671,19 +676,13 @@ class BookshelfGridCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (infoText != null) ...[
+                  if (infoText != null || unreadText != null) ...[
                     const SizedBox(height: ShelfTokens.spaceXS),
                     SizedBox(
                       width: double.infinity,
-                      child: Text(
-                        infoText!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: ShelfTokens.subtitle,
-                          height: ShelfTokens.subtitleLineHeight,
-                          color: palette.muted,
-                        ),
+                      child: BookshelfInfoLine(
+                        unreadText: unreadText,
+                        infoText: infoText,
                       ),
                     ),
                   ],
@@ -707,6 +706,9 @@ class BookshelfDoubleCard extends StatelessWidget {
   final MediaItem item;
   final String? badgeText;
   final String? subtitleText;
+
+  /// 「N章未读」：有值时替换底部的类型标签，以高亮胶囊显示。
+  final String? unreadText;
   final bool editing;
   final bool selected;
   final VoidCallback onTap;
@@ -718,6 +720,7 @@ class BookshelfDoubleCard extends StatelessWidget {
     required this.onTap,
     this.badgeText,
     this.subtitleText,
+    this.unreadText,
     this.editing = false,
     this.selected = false,
     this.onLongPress,
@@ -731,7 +734,6 @@ class BookshelfDoubleCard extends StatelessWidget {
         scaler.scale(ShelfTokens.titleDouble) * ShelfTokens.titleLineHeight;
     final subtitleHeight =
         scaler.scale(ShelfTokens.subtitle) * ShelfTokens.subtitleLineHeight;
-    final kindColor = bookshelfKindColor(item.kind);
     return Semantics(
       button: true,
       selected: selected,
@@ -752,7 +754,6 @@ class BookshelfDoubleCard extends StatelessWidget {
                 cellWidth - ShelfTokens.doubleCardPadding * 2,
               );
               final coverHeight = coverWidth * ShelfTokens.doubleCoverRatio;
-              final tagHeight = shelfKindTagHeight(context);
               return DecoratedBox(
                 key: const Key('shelf-double-card'),
                 decoration: BoxDecoration(
@@ -820,35 +821,7 @@ class BookshelfDoubleCard extends StatelessWidget {
                           ),
                         ),
                       const SizedBox(height: 6),
-                      // 类型小标签：kind 色 12% 底（数据真实存在，非装饰）。
-                      SizedBox(
-                        height: tagHeight,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: (kindColor ?? palette.muted).withValues(
-                              alpha: 0.12,
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              ShelfTokens.kindTagSize,
-                            ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: ShelfTokens.spaceS,
-                            ),
-                            child: Text(
-                              bookshelfKindLabel(item.kind),
-                              maxLines: 1,
-                              style: TextStyle(
-                                fontSize: ShelfTokens.kindTagSize,
-                                height: 1.2,
-                                fontWeight: FontWeight.w500,
-                                color: kindColor ?? palette.muted,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                      BookshelfTag(kind: item.kind, unreadText: unreadText),
                     ],
                   ),
                 ),
@@ -870,6 +843,9 @@ class BookshelfListCard extends StatelessWidget {
   final String? progressText;
   final String? metaText;
 
+  /// 「N章未读」，高亮显示在进度行开头。
+  final String? unreadText;
+
   /// 阅读进度 0..1；无值时不渲染行底进度条。
   final double? progress;
   final bool editing;
@@ -883,6 +859,7 @@ class BookshelfListCard extends StatelessWidget {
     required this.onTap,
     this.progressText,
     this.metaText,
+    this.unreadText,
     this.progress,
     this.editing = false,
     this.selected = false,
@@ -944,18 +921,12 @@ class BookshelfListCard extends StatelessWidget {
                             color: palette.ink,
                           ),
                         ),
-                        if (progressText != null)
+                        if (progressText != null || unreadText != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 3),
-                            child: Text(
-                              progressText!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: ShelfTokens.subtitle,
-                                height: ShelfTokens.subtitleLineHeight,
-                                color: palette.muted,
-                              ),
+                            child: BookshelfInfoLine(
+                              unreadText: unreadText,
+                              infoText: progressText,
                             ),
                           ),
                         if (metaText != null)

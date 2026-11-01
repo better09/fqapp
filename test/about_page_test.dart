@@ -27,7 +27,7 @@ void main() {
     await pumpAbout(tester);
 
     expect(find.text('什锦铺'), findsOneWidget);
-    expect(find.text('小说 / 短剧 / 漫剧 / 漫画 / 听书聚合客户端'), findsOneWidget);
+    expect(find.text('小说阅读客户端'), findsOneWidget);
     // 介绍是一段正文，不再是「项目介绍」标题行。
     expect(find.textContaining('所有签名与解密都在你的手机本地完成'), findsOneWidget);
     expect(find.text('项目介绍'), findsNothing);

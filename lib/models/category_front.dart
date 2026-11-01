@@ -25,7 +25,9 @@ class CategoryDim {
   }
 }
 
-/// One top channel, e.g. 男生 / 女生 / 有声书 / 出版.
+const _nonNovelTabKeywords = ['有声', '听书', '短剧', '漫剧', '漫画', '视频'];
+
+/// One top channel, e.g. 男生 / 女生 / 出版.
 class CategoryTab {
   const CategoryTab({required this.name, required this.value});
 
@@ -134,16 +136,10 @@ class CategoryFront {
     }
     if (dims.isEmpty || tiles.isEmpty) return empty;
 
-    // 官方顶栏还有「短剧/漫画」两个频道（NewCategoryTabType Comic=5/
-    // ShortSeries=6，客户端写死）；这套身份的 rule.tab 只下发 4 个，按
-    // 官方顺序在尾部补齐，点击仍走同一端点。上游对 5/6 暂不响应时，页面
-    // 落到错误重试态——入口与形态先对齐官方。
-    const officialTail = [
-      CategoryTab(name: '短剧', value: '6'),
-      CategoryTab(name: '漫画', value: '5'),
-    ];
-    final values = tabs.map((t) => t.value).toSet();
-    tabs.addAll(officialTail.where((t) => !values.contains(t.value)));
+    // 只保留小说频道：有声书 / 短剧 / 漫画等非小说频道不展示。
+    tabs.removeWhere(
+      (tab) => _nonNovelTabKeywords.any((keyword) => tab.name.contains(keyword)),
+    );
 
     return CategoryFront(
       tabs: List.unmodifiable(tabs),

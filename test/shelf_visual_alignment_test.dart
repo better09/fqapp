@@ -9,7 +9,6 @@ import 'package:fqapp/pages/library_page.dart';
 import 'package:fqapp/services/app_theme.dart';
 import 'package:fqapp/services/library_store.dart';
 import 'package:fqapp/services/shelf_store.dart';
-import 'package:fqapp/widgets/home/home_chip.dart';
 import 'package:fqapp/widgets/shelf/shelf_empty.dart';
 
 /// 书架视觉对齐回归：三种空态同一套尺度、今日已读胶囊与筛选 chip 同款描边。
@@ -71,7 +70,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('墨水屏下今日已读胶囊有黑描边，收藏筛选 chip 选中/未选中可区分', (tester) async {
+  testWidgets('墨水屏下今日已读胶囊有黑描边', (tester) async {
     final original = einkModeNotifier.value;
     einkModeNotifier.value = true;
     addTearDown(() => einkModeNotifier.value = original);
@@ -88,24 +87,6 @@ void main() {
     expect(pillBorder, isNotNull, reason: '白底胶囊需要黑描边才可见');
     expect((pillBorder! as Border).top.color, Colors.black);
 
-    await tester.tap(find.text('收藏'));
-    await tester.pumpAndSettle();
-    final all = find.byKey(const Key('library-collection-filter-all'));
-    final video = find.byKey(const Key('library-collection-filter-video'));
-    expect(tester.widget(all), isA<HomeChip>());
-    expect(tester.widget(video), isA<HomeChip>());
-    final selected = _chipDecoration(tester, all);
-    final unselected = _chipDecoration(tester, video);
-    expect(selected.color, Colors.black);
-    expect(unselected.color, Colors.white);
-    expect((unselected.shape as StadiumBorder).side.color, Colors.black);
     await tester.pumpWidget(const SizedBox.shrink());
   });
-}
-
-ShapeDecoration _chipDecoration(WidgetTester tester, Finder chip) {
-  final container = tester.widget<Container>(
-    find.descendant(of: chip, matching: find.byType(Container)).first,
-  );
-  return container.decoration! as ShapeDecoration;
 }

@@ -43,61 +43,56 @@ void main() {
     expect(find.byKey(const Key('search-shuqi-source')), findsOneWidget);
   });
 
-  testWidgets(
-    'shuqi disables category tabs and fanqie restores the previous category',
-    (tester) async {
-      final requests = <(String, int, int)>[];
-      final shuqiCalls = <String>[];
-      await tester.pumpWidget(
-        _app(
-          searchLoader: (query, {required int tabType, required int offset}) {
-            requests.add((query, tabType, offset));
-            return Future.value([
-              SearchTab(
-                title: tabType == 3 ? '书籍' : '综合',
-                items: [_item('$tabType-$offset', '$query 结果')],
-                hasMore: false,
-              ),
-            ]);
-          },
-          shuqiLoader: (key) async {
-            shuqiCalls.add(key);
-            return _shuqiPayload('书旗作品');
-          },
-        ),
-      );
-      await tester.pumpAndSettle();
+  testWidgets('shuqi disables category tabs and fanqie searches novels again', (
+    tester,
+  ) async {
+    final requests = <(String, int, int)>[];
+    final shuqiCalls = <String>[];
+    await tester.pumpWidget(
+      _app(
+        searchLoader: (query, {required int tabType, required int offset}) {
+          requests.add((query, tabType, offset));
+          return Future.value([
+            SearchTab(
+              title: tabType == 3 ? '书籍' : '综合',
+              items: [_item('$tabType-$offset', '$query 结果')],
+              hasMore: false,
+            ),
+          ]);
+        },
+        shuqiLoader: (key) async {
+          shuqiCalls.add(key);
+          return _shuqiPayload('书旗作品');
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), '测试');
-      await tester.testTextInput.receiveAction(TextInputAction.search);
-      await tester.pumpAndSettle();
-      expect(requests, [('测试', 1, 0)]);
+    await tester.enterText(find.byType(TextField), '测试');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(requests, [('测试', 3, 0)]);
 
-      await tester.tap(find.widgetWithText(ChoiceChip, '小说'));
-      await tester.pumpAndSettle();
-      expect(requests.last, ('测试', 3, 0));
+    await tester.tap(find.byKey(const Key('search-shuqi-source')));
+    await tester.pumpAndSettle();
+    expect(shuqiCalls, ['测试']);
+    expect(find.text('书旗来源暂不提供评分'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('search-shuqi-source')));
-      await tester.pumpAndSettle();
-      expect(shuqiCalls, ['测试']);
-      expect(find.text('书旗来源暂不提供评分'), findsOneWidget);
+    // 书旗来源下分类页签置灰且不可点：请求数量不变，来源也没有被切回。
+    final before = requests.length;
+    await tester.tap(
+      find.widgetWithText(ChoiceChip, '小说'),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+    expect(requests, hasLength(before));
+    expect(find.text('书旗来源暂不提供评分'), findsOneWidget);
 
-      // 书旗来源下分类页签置灰且不可点：请求数量不变，来源也没有被切回。
-      final before = requests.length;
-      await tester.tap(
-        find.widgetWithText(ChoiceChip, '小说'),
-        warnIfMissed: false,
-      );
-      await tester.pumpAndSettle();
-      expect(requests, hasLength(before));
-      expect(find.text('书旗来源暂不提供评分'), findsOneWidget);
-
-      // 点「番茄」回到切换前的「小说」，而不是重置到综合。
-      await tester.tap(find.byKey(const Key('search-source-fanqie')));
-      await tester.pumpAndSettle();
-      expect(requests.last, ('测试', 3, 0));
-    },
-  );
+    // 点「番茄」回到「小说」分类。
+    await tester.tap(find.byKey(const Key('search-source-fanqie')));
+    await tester.pumpAndSettle();
+    expect(requests.last, ('测试', 3, 0));
+  });
 
   testWidgets(
     'discovery shows history before hot and hides hot while typing or in shuqi',
@@ -209,7 +204,7 @@ void main() {
             (query, {required int tabType, required int offset}) async {
               return [
                 SearchTab(
-                  title: '综合',
+                  title: '书籍',
                   items: [_item('one', '列表作品')],
                   hasMore: false,
                 ),
@@ -238,7 +233,7 @@ void main() {
               (query, {required int tabType, required int offset}) async {
                 return [
                   SearchTab(
-                    title: '综合',
+                    title: '书籍',
                     items: [_item('one', '列表作品')],
                     hasMore: false,
                   ),

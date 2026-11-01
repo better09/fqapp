@@ -9,6 +9,9 @@ import 'dart:isolate';
 
 bool isVideoKind(String kind) => kind == 'video' || kind == 'manju';
 
+/// 小说本体：书架、浏览历史与阅读统计只展示这一类。
+bool isNovelKind(String kind) => kind == 'book';
+
 /// Runs [parseMediaItems] on a background isolate so deep recursive payload
 /// traversal never janks the UI thread.
 Future<List<MediaItem>> parseMediaItemsAsync(Map<String, dynamic> payload) =>

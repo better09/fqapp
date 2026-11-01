@@ -26,7 +26,6 @@ class _ShelfEntry {
   /// 目录总章数。旧历史没有这个字段（null），书架回退到百分比显示。
   final int? chapterCount;
   final int? latestChapterCount;
-  final bool importedResume;
 
   const _ShelfEntry({
     required this.item,
@@ -38,7 +37,6 @@ class _ShelfEntry {
     this.episode,
     this.chapterCount,
     this.latestChapterCount,
-    this.importedResume = false,
   });
 
   factory _ShelfEntry.fromRecord(
@@ -56,10 +54,6 @@ class _ShelfEntry {
     episode: _episodeOf(history),
     chapterCount: _chapterCountOf(history),
     latestChapterCount: latestChapterCount,
-    importedResume:
-        record.item.kind == 'book' &&
-        history?['fanqieImported'] == true &&
-        history?['chapterId'] != null,
   );
 
   factory _ShelfEntry.fromHistory(Map<String, dynamic> history) {
@@ -84,10 +78,6 @@ class _ShelfEntry {
       progress: _progressOf(history),
       episode: _episodeOf(history),
       chapterCount: _chapterCountOf(history),
-      importedResume:
-          item.kind == 'book' &&
-          history['fanqieImported'] == true &&
-          history['chapterId'] != null,
     );
   }
 
@@ -140,6 +130,17 @@ class _ShelfEntry {
       parts.add('${(value * 100).round()}%');
     }
     return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  /// 还有多少章没读：最新总章数减去已读到的章（正在读的那章算已读），
+  /// 没读过的书按总章数算。总章数未知或已读完时为 null。
+  String? get unreadText {
+    final total = _totalChapterCount;
+    if (total == null) return null;
+    final chapter = episode;
+    final read = chapter == null || chapter < 0 ? 0 : chapter + 1;
+    final unread = total - read;
+    return unread > 0 ? '$unread章未读' : null;
   }
 
   bool get _hasUpdate =>

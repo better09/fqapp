@@ -89,42 +89,35 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
     );
   }
 
-  /// 优先用缓存续读；未命中时保留离线阅读与详情页加载入口。
-  Future<void> _open(MediaItem item, {bool importedResume = false}) async {
+  /// 书架点书直接进阅读器，跳过详情页。
+  Future<void> _open(MediaItem item) async {
     if (ImportedBookStore.isLocalBookId(item.id)) {
       await _openLocalBook(item);
       return;
     }
-    final preferences = BookOpenPreferences.instance;
-    await preferences.load();
+    final outcome = await openBookInReader(
+      context,
+      item,
+      cache: widget.cacheStore,
+      readerStore: widget.readerStore,
+      directoryLoader: widget.directoryLoader,
+      connectivity: widget.connectivity,
+    );
     if (!mounted) return;
-    if ((importedResume || preferences.shelfDirectReader.value) &&
-        await openRecentBook(
-          context,
-          item,
-          cache: widget.cacheStore,
-          readerStore: widget.readerStore,
-          directoryLoader: widget.directoryLoader,
-        )) {
-      return;
+    switch (outcome) {
+      case BookOpenOutcome.opened:
+        return;
+      case BookOpenOutcome.unavailable:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('目录加载失败，请检查网络后重试')),
+        );
+      case BookOpenOutcome.missingImportedChapter:
+        // 让用户在目录里自己挑一章，而不是从第一章读起覆盖导入的进度。
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('导入的章节暂不在当前目录中，请在目录中选择可阅读章节')),
+        );
+        await openBookDetail(context, item, entry: BookOpenEntry.shelf);
     }
-    if (!mounted) return;
-    if (await _openCached(item)) return;
-    if (!mounted) return;
-    if (importedResume) {
-      await Navigator.push(
-        context,
-        MaterialPageRoute<void>(
-          builder: (_) => DetailPage(
-            item: item,
-            readerStore: widget.readerStore,
-            autoOpenReader: true,
-          ),
-        ),
-      );
-      return;
-    }
-    await openBookDetail(context, item, entry: BookOpenEntry.shelf);
   }
 
   Future<void> _openLocalBook(MediaItem item) async {
@@ -169,39 +162,14 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
     );
   }
 
-  /// 离线直读：只有小说有章节缓存，且必须在无网时才抢在详情页前面。
-  Future<bool> _openCached(MediaItem item) async {
-    final cache = widget.cacheStore ?? ChapterCacheStore.instance;
-    final book = await cachedBookForOfflineOpen(
-      item,
-      cache: cache,
-      connectivity: await (widget.connectivity ?? currentConnectivity)(),
-    );
-    if (book == null || !mounted) return false;
-    return openCachedBook(
-      context,
-      book: book,
-      cache: cache,
-      readerStore: widget.readerStore,
-    );
-  }
-
   /// 空书架上的「查看离线缓存」入口：书架空不等于本地没内容。
   void _openCachedBooks() => Navigator.push(
     context,
     MaterialPageRoute<void>(builder: (_) => const CachedBooksPage()),
   );
 
-  List<_ShelfEntry> get _visibleEntries => switch (_tab) {
-    1 => _browseHistory,
-    2 => _sortShelf([
-      for (final entry in _collection)
-        if (_collectionFilter == null ||
-            entry.item.kind == _collectionFilter)
-          entry,
-    ]),
-    _ => _sortShelf(_shelf),
-  };
+  List<_ShelfEntry> get _visibleEntries =>
+      _tab == 1 ? _browseHistory : _sortShelf(_shelf);
 
   bool get _allSelected {
     final entries = _visibleEntries;
@@ -251,15 +219,13 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
     _enterEdit(entry);
   }
 
-  /// 书架 / 收藏 tab 的「移出书架」：只把条目移出本地收藏库，阅读
-  /// 历史保留。
+  /// 书架 tab 的「移出书架」：只把条目移出本地收藏库，阅读历史保留。
   ///
   /// 决策：可逆操作勿扰——移出书架有 4s 撤销窗口，直接执行，不再弹确认
   /// 对话框（原对话框的「阅读记录会保留」说明挪进 SnackBar 语义里）。
   Future<void> _removeFromShelf() async {
-    final fromCollection = _tab == 2;
     final selected = [
-      for (final entry in fromCollection ? _collection : _shelf)
+      for (final entry in _shelf)
         if (_selected.contains(entry.selectionKey)) entry,
     ];
     if (selected.isEmpty) return;
@@ -281,17 +247,10 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
     // screen until the disk round trip finishes reads as a dead button.
     _exitEdit();
     setState(() {
-      if (fromCollection) {
-        _collection = [
-          for (final entry in _collection)
-            if (!removed.contains(entry.selectionKey)) entry,
-        ];
-      } else {
-        _shelf = [
-          for (final entry in _shelf)
-            if (!removed.contains(entry.selectionKey)) entry,
-        ];
-      }
+      _shelf = [
+        for (final entry in _shelf)
+          if (!removed.contains(entry.selectionKey)) entry,
+      ];
     });
     try {
       await ShelfStore.instance.removeKeys(keys);
@@ -314,7 +273,7 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '已移出 ${selected.length} ${fromCollection ? '部' : '本'}，阅读记录会保留',
+          '已移出 ${selected.length} 本，阅读记录会保留',
         ),
         duration: const Duration(seconds: 4),
         // 带 action 的 SnackBar 默认 persist，duration 不生效，撤销条会挂在根

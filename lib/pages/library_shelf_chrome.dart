@@ -158,49 +158,6 @@ mixin _LibraryShelfChrome on _LibraryPageActions {
     );
   }
 
-  /// L2 筛选行（收藏 tab）：全部 / 短剧 / 漫剧胶囊 + 右侧版式分段，
-  /// 形态与书架 tab 工具栏同构。
-  Widget _collectionToolbar(HomePalette palette) {
-    return Padding(
-      padding: const EdgeInsets.only(
-        top: ShelfTokens.spaceXS,
-        bottom: ShelfTokens.spaceS,
-        left: ShelfTokens.screenPadding,
-        right: ShelfTokens.screenPadding,
-      ),
-      child: Row(
-        children: [
-          HomeChip(
-            key: const Key('library-collection-filter-all'),
-            label: '全部',
-            selected: _collectionFilter == null,
-            onTap: () => setState(() => _collectionFilter = null),
-          ),
-          const SizedBox(width: 8),
-          HomeChip(
-            key: const Key('library-collection-filter-video'),
-            label: '短剧',
-            selected: _collectionFilter == 'video',
-            onTap: () => setState(() => _collectionFilter = 'video'),
-          ),
-          const SizedBox(width: 8),
-          HomeChip(
-            key: const Key('library-collection-filter-manju'),
-            label: '漫剧',
-            selected: _collectionFilter == 'manju',
-            onTap: () => setState(() => _collectionFilter = 'manju'),
-          ),
-          const Spacer(),
-          _LayoutSegments(
-            current: _layout,
-            palette: palette,
-            onChanged: _setLayout,
-          ),
-        ],
-      ),
-    );
-  }
-
   /// 编辑态顶部操作栏（by1.xml）：全选 / 已选择 N 本 / 完成。
   Widget _editBar(HomePalette palette) {
     return Container(
@@ -229,7 +186,7 @@ mixin _LibraryShelfChrome on _LibraryPageActions {
           Expanded(
             child: Center(
               child: Text(
-                '已选择 ${_selected.length} ${_tab == 2 ? '部' : '本'}',
+                '已选择 ${_selected.length} 本',
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
@@ -261,7 +218,7 @@ mixin _LibraryShelfChrome on _LibraryPageActions {
   ///
   /// 官方底栏还有找相似书 / 移动至分组 / 分享为书单 / 加入桌面 / 云同步 /
   /// 导入图书 / 最近删除，这些本地都没有数据源，不伪造入口；
-  /// 有数据支撑的只有「移出书架」（书架 / 收藏 tab，可撤销故直接执行）与
+  /// 有数据支撑的只有「移出书架」（书架 tab，可撤销故直接执行）与
   /// 「删除」（浏览历史 tab，不可撤销故保留确认）。
   Widget _editBottomBar(HomePalette palette) {
     final removing = _tab != 1;

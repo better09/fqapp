@@ -7,23 +7,12 @@ mixin _LibraryShelfViews on _LibraryPageActions {
   Widget _content(HomePalette palette) {
     final entries = _visibleEntries;
     if (entries.isEmpty) {
-      // 空态按 tab 区分：书架为空给「去书城找书 + 查看离线缓存」（筛选已
-      // 移除，故这已是书架 tab 唯一的空态）；浏览历史为空沿用官方通用
-      // 文案；收藏为空按当前筛选给文案 + 「找短剧」入口（官方空态形态）。
+      // 空态按 tab 区分：书架为空给「去书城找书 + 查看离线缓存」；浏览
+      // 历史为空沿用官方通用文案。
       if (_tab == 0 && _shelf.isEmpty) {
         return ShelfEmptyState(
           onBrowse: widget.onBrowse,
           onCachedBooks: _openCachedBooks,
-        );
-      }
-      if (_tab == 2) {
-        return ShelfCollectionEmptyState(
-          text: switch (_collectionFilter) {
-            'video' => '暂无短剧',
-            'manju' => '暂无漫剧',
-            _ => '暂无收藏内容',
-          },
-          onFindDrama: widget.onFindDrama,
         );
       }
       return const ShelfEmptyHint(text: '未找到相关内容');
@@ -87,6 +76,7 @@ mixin _LibraryShelfViews on _LibraryPageActions {
               item: entry.item,
               badgeText: entry.badgeText,
               infoText: entry.infoText,
+              unreadText: _unreadTextOf(entry),
               editing: _editing,
               selected: _selected.contains(entry.selectionKey),
               onTap: () => _tap(entry),
@@ -129,6 +119,7 @@ mixin _LibraryShelfViews on _LibraryPageActions {
               item: entry.item,
               badgeText: entry.badgeText,
               subtitleText: entry.subtitleText,
+              unreadText: _unreadTextOf(entry),
               editing: _editing,
               selected: _selected.contains(entry.selectionKey),
               onTap: () => _tap(entry),
@@ -164,6 +155,7 @@ mixin _LibraryShelfViews on _LibraryPageActions {
             item: entry.item,
             progressText: entry.readingText,
             metaText: entry.metaText,
+            unreadText: _unreadTextOf(entry),
             progress: entry.progress,
             editing: _editing,
             selected: _selected.contains(entry.selectionKey),
@@ -175,11 +167,15 @@ mixin _LibraryShelfViews on _LibraryPageActions {
     );
   }
 
+  /// 未读章数只在书架 tab 高亮；浏览历史不是「追更」的书，不提示。
+  String? _unreadTextOf(_ShelfEntry entry) =>
+      _tab == 0 ? entry.unreadText : null;
+
   void _tap(_ShelfEntry entry) {
     if (_editing) {
       _toggleSelected(entry);
     } else {
-      _open(entry.item, importedResume: entry.importedResume);
+      _open(entry.item);
     }
   }
 }

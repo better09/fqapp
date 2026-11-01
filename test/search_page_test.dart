@@ -72,7 +72,7 @@ void main() {
                   offsets.add(offset);
                   return [
                     SearchTab(
-                      title: '综合',
+                      title: '书籍',
                       items: switch (offset) {
                         0 => [_item('low', '低分作品', score: 8.2)],
                         14 => [_item('unknown', '未评分作品')],
@@ -127,7 +127,7 @@ void main() {
       requests++;
       return [
         SearchTab(
-          title: '综合',
+          title: '书籍',
           items: [_item('novel', '列表作品', score: 9.1)],
           hasMore: false,
         ),
@@ -164,7 +164,7 @@ void main() {
       required int offset,
     }) async => [
       SearchTab(
-        title: '综合',
+        title: '书籍',
         items: [_item('low', '低分作品', score: 8.2)],
         hasMore: false,
       ),
@@ -206,11 +206,8 @@ void main() {
       _app(
         (query, {required int tabType, required int offset}) async => [
           SearchTab(
-            title: '综合',
-            items: [
-              _item('novel', '长篇小说', wordNumber: 2000000, score: 9.1),
-              _item('drama', '短剧作品', kind: 'video', ep: '103'),
-            ],
+            title: '书籍',
+            items: [_item('novel', '长篇小说', wordNumber: 2000000, score: 9.1)],
             hasMore: false,
           ),
         ],
@@ -218,16 +215,14 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.textContaining('200万字'), findsWidgets);
-    expect(find.textContaining('共103集'), findsWidgets);
 
     await tester.tap(find.byKey(const Key('search-layout-toggle')));
     await tester.pumpAndSettle();
     expect(find.text('小说 · 200万字 · 9.1分'), findsOneWidget);
-    expect(find.text('短剧 · 共103集 · 暂无评分'), findsOneWidget);
   });
 
   testWidgets(
-    'fixed categories request their own source and filter copied hits',
+    'the novel category requests its own source and filters copied hits',
     (tester) async {
       final requests = <(String, int, int)>[];
       final mixed = [
@@ -265,45 +260,10 @@ void main() {
         tester
             .widgetList<ChoiceChip>(find.byType(ChoiceChip))
             .map((chip) => (chip.label as Text).data),
-        ['综合', '小说', '短剧', '漫剧', '漫画', '听书'],
+        ['小说'],
       );
-      expect(_visibleKinds(tester), [
-        'book',
-        'video',
-        'manju',
-        'manga',
-        'audio',
-      ]);
-      expect(requests, [('测试', 1, 0)]);
-
-      for (final category in [
-        ('小说', 'book', 3),
-        ('短剧', 'video', 11),
-        ('漫剧', 'manju', 11),
-        ('漫画', 'manga', 8),
-        ('听书', 'audio', 2),
-      ]) {
-        await tester.tap(find.widgetWithText(ChoiceChip, category.$1));
-        await tester.pumpAndSettle();
-        expect(_visibleKinds(tester), [category.$2]);
-        expect(requests.last, ('测试', category.$3, 0));
-      }
-      expect(requests.map((request) => request.$2), [1, 3, 11, 11, 8, 2]);
-
-      await tester.tap(find.widgetWithText(ChoiceChip, '综合'));
-      await tester.pumpAndSettle();
-      expect(_visibleKinds(tester), [
-        'book',
-        'video',
-        'manju',
-        'manga',
-        'audio',
-      ]);
-      expect(
-        requests,
-        hasLength(6),
-        reason: 'Completed categories keep their cache',
-      );
+      expect(_visibleKinds(tester), ['book']);
+      expect(requests, [('测试', 3, 0)]);
     },
   );
 
@@ -316,7 +276,7 @@ void main() {
         offsets.add(offset);
         return [
           SearchTab(
-            title: '综合',
+            title: '书籍',
             items: offset == 14 ? [_item('book', '后续小说')] : [],
             hasMore: offset == 0,
             nextOffset: offset == 0 ? 14 : 0,
@@ -344,7 +304,7 @@ void main() {
           offsets.add(offset);
           return [
             SearchTab(
-              title: '综合',
+              title: '书籍',
               items: [
                 _item('one', '第一本'),
                 if (offset == 27) _item('two', '第二本'),
@@ -371,57 +331,6 @@ void main() {
     },
   );
 
-  testWidgets(
-    'filtered-empty manju pages continue independently of short drama',
-    (tester) async {
-      final requests = <(int, int)>[];
-      await tester.pumpWidget(
-        _app((query, {required int tabType, required int offset}) async {
-          requests.add((tabType, offset));
-          if (tabType == 1) {
-            return [SearchTab(title: '综合', items: [], hasMore: false)];
-          }
-          return [
-            SearchTab(
-              title: '综合',
-              items: [_item('unrelated', '其他栏目的漫剧', kind: 'manju')],
-              hasMore: true,
-              nextOffset: 99,
-            ),
-            SearchTab(
-              title: '短剧',
-              items: [
-                if (offset == 0)
-                  _item('live', '真人短剧', kind: 'video')
-                else
-                  _item('animated', '后续漫剧', kind: 'manju'),
-              ],
-              hasMore: offset == 0,
-              nextOffset: offset == 0 ? 17 : 0,
-            ),
-          ];
-        }),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(ChoiceChip, '漫剧'));
-      await tester.pumpAndSettle();
-      expect(requests, [(1, 0), (11, 0)]);
-      expect(find.byType(HomeMediaCard), findsNothing);
-      expect(find.text('加载更多'), findsOneWidget);
-      await tester.tap(find.text('加载更多'));
-      await tester.pumpAndSettle();
-      expect(requests.last, (11, 17));
-      expect(find.text('后续漫剧'), findsOneWidget);
-      expect(find.text('其他栏目的漫剧'), findsNothing);
-
-      await tester.tap(find.widgetWithText(ChoiceChip, '短剧'));
-      await tester.pumpAndSettle();
-      expect(requests, [(1, 0), (11, 0), (11, 17), (11, 0), (11, 17)]);
-      expect(find.text('真人短剧'), findsOneWidget);
-      expect(find.text('后续漫剧'), findsNothing);
-    },
-  );
-
   for (final terminal in <({String label, bool? hasMore, int? next})>[
     (label: 'explicit exhaustion', hasMore: false, next: 28),
     (label: 'unchanged cursor', hasMore: true, next: 14),
@@ -435,7 +344,7 @@ void main() {
           offsets.add(offset);
           return [
             SearchTab(
-              title: '综合',
+              title: '书籍',
               items: [_item('one', '唯一作品')],
               hasMore: offset == 0 ? true : terminal.hasMore,
               nextOffset: offset == 0 ? 14 : terminal.next,
@@ -459,7 +368,7 @@ void main() {
         offsets.add(offset);
         return [
           SearchTab(
-            title: '综合',
+            title: '书籍',
             items: offset == 0 ? [] : [_item('one', '后续作品')],
             nextOffset: offset == 0 ? 14 : null,
           ),
@@ -473,41 +382,29 @@ void main() {
     expect(find.text('后续作品'), findsOneWidget);
   });
 
-  testWidgets(
-    'initial errors stay in their category and retry at offset zero',
-    (tester) async {
-      final requests = <(int, int)>[];
-      var attempts = 0;
-      await tester.pumpWidget(
-        _app((query, {required int tabType, required int offset}) async {
-          requests.add((tabType, offset));
-          if (tabType == 1 && attempts++ == 0) throw Exception('首屏失败');
-          return [
-            SearchTab(
-              title: tabType == 1 ? '综合' : '漫画',
-              items: [
-                _item('success', '成功作品', kind: tabType == 1 ? 'book' : 'manga'),
-              ],
-              hasMore: false,
-            ),
-          ];
-        }),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('加载失败，点击重试'), findsOneWidget);
-      await tester.tap(find.widgetWithText(ChoiceChip, '漫画'));
-      await tester.pumpAndSettle();
-      expect(_visibleKinds(tester), ['manga']);
-      expect(find.textContaining('首屏失败'), findsNothing);
-      await tester.tap(find.widgetWithText(ChoiceChip, '综合'));
-      await tester.pumpAndSettle();
-      expect(requests, [(1, 0), (8, 0)]);
-      await tester.tap(find.text('加载失败，点击重试'));
-      await tester.pumpAndSettle();
-      expect(requests, [(1, 0), (8, 0), (1, 0)]);
-      expect(_visibleKinds(tester), ['book']);
-    },
-  );
+  testWidgets('initial errors retry at offset zero', (tester) async {
+    final requests = <(int, int)>[];
+    var attempts = 0;
+    await tester.pumpWidget(
+      _app((query, {required int tabType, required int offset}) async {
+        requests.add((tabType, offset));
+        if (attempts++ == 0) throw Exception('首屏失败');
+        return [
+          SearchTab(
+            title: '书籍',
+            items: [_item('success', '成功作品')],
+            hasMore: false,
+          ),
+        ];
+      }),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('加载失败，点击重试'), findsOneWidget);
+    await tester.tap(find.text('加载失败，点击重试'));
+    await tester.pumpAndSettle();
+    expect(requests, [(3, 0), (3, 0)]);
+    expect(_visibleKinds(tester), ['book']);
+  });
 
   testWidgets('pagination failures retain results and retry the same cursor', (
     tester,
@@ -523,7 +420,7 @@ void main() {
         }
         return [
           SearchTab(
-            title: '综合',
+            title: '书籍',
             items: [_item('$offset', '作品 $offset')],
             hasMore: offset == 0,
             nextOffset: offset == 0 ? 14 : 0,
@@ -545,51 +442,6 @@ void main() {
     expect(_gridCount(tester), 2);
   });
 
-  testWidgets(
-    'out of order category responses keep results and loading isolated',
-    (tester) async {
-      final manga = Completer<List<SearchTab>>();
-      final audio = Completer<List<SearchTab>>();
-      final requests = <int>[];
-      await tester.pumpWidget(
-        _app((query, {required int tabType, required int offset}) async {
-          requests.add(tabType);
-          if (tabType == 8) return manga.future;
-          if (tabType == 2) return audio.future;
-          return [SearchTab(title: '综合', items: [], hasMore: false)];
-        }),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(ChoiceChip, '漫画'));
-      await tester.pump();
-      await tester.tap(find.widgetWithText(ChoiceChip, '听书'));
-      await tester.pump();
-      manga.complete([
-        SearchTab(
-          title: '漫画',
-          items: [_item('manga', '漫画结果', kind: 'manga')],
-          hasMore: false,
-        ),
-      ]);
-      await tester.pump();
-      expect(find.text('漫画结果'), findsNothing);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      audio.complete([
-        SearchTab(
-          title: '听书',
-          items: [_item('audio', '听书结果', kind: 'audio')],
-          hasMore: false,
-        ),
-      ]);
-      await tester.pumpAndSettle();
-      expect(find.text('听书结果'), findsOneWidget);
-      await tester.tap(find.widgetWithText(ChoiceChip, '漫画'));
-      await tester.pumpAndSettle();
-      expect(find.text('漫画结果'), findsOneWidget);
-      expect(requests, [1, 8, 2]);
-    },
-  );
-
   for (final failLate in [false, true]) {
     testWidgets(
       'a new query ignores a late page ${failLate ? 'error' : 'result'}',
@@ -602,7 +454,7 @@ void main() {
             if (query == '测试' && offset == 14) return oldPage.future;
             return [
               SearchTab(
-                title: '综合',
+                title: '书籍',
                 items: [_item(query, '$query 作品')],
                 hasMore: query == '测试',
                 nextOffset: query == '测试' ? 14 : 0,
@@ -612,7 +464,7 @@ void main() {
         );
         await tester.pump();
         await tester.pump();
-        expect(requests, [('测试', 1, 0), ('测试', 1, 14)]);
+        expect(requests, [('测试', 3, 0), ('测试', 3, 14)]);
         await tester.enterText(find.byType(TextField), '新关键词');
         await tester.testTextInput.receiveAction(TextInputAction.search);
         await tester.pumpAndSettle();
@@ -621,7 +473,7 @@ void main() {
         } else {
           oldPage.complete([
             SearchTab(
-              title: '综合',
+              title: '书籍',
               items: [_item('stale', '过期作品')],
               hasMore: true,
               nextOffset: 27,
@@ -632,7 +484,7 @@ void main() {
         expect(find.text('新关键词 作品'), findsOneWidget);
         expect(find.text('过期作品'), findsNothing);
         expect(find.text('加载失败，点击重试'), findsNothing);
-        expect(requests.last, ('新关键词', 1, 0));
+        expect(requests.last, ('新关键词', 3, 0));
         expect(requests, hasLength(3));
       },
     );
@@ -653,11 +505,11 @@ void main() {
     await tester.tap(find.byTooltip('清空'));
     await tester.pumpAndSettle();
     pending.first.complete([
-      SearchTab(title: '综合', items: [_item('stale', '过期作品')]),
+      SearchTab(title: '书籍', items: [_item('stale', '过期作品')]),
     ]);
     await tester.pumpAndSettle();
     expect(find.text('搜索历史'), findsOneWidget);
-    expect(find.byType(ChoiceChip), findsNWidgets(6));
+    expect(find.byType(ChoiceChip), findsOneWidget);
     await tester.tap(find.text('测试'));
     await tester.pump();
     expect(pending, hasLength(2));
@@ -738,7 +590,7 @@ void main() {
         offsets.add(offset);
         return [
           SearchTab(
-            title: '综合',
+            title: '书籍',
             items: offset == 0
                 ? [for (var i = 1; i <= 30; i++) _item('$i', '第$i本')]
                 : [_item('30', '重复条目'), _item('31', '第31本')],

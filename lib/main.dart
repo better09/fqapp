@@ -19,7 +19,6 @@ import 'dart:ui' show ImageFilter;
 import 'pages/home_page.dart';
 import 'pages/audio_page.dart';
 import 'pages/cached_books_page.dart';
-import 'pages/drama_page.dart';
 import 'pages/library_page.dart';
 import 'pages/mine_page.dart';
 import 'services/app_log.dart';
@@ -420,8 +419,12 @@ class RootShell extends StatefulWidget {
   State<RootShell> createState() => _RootShellState();
 }
 
+/// 底部 tab 下标：启动默认停在书架。
+const int _shelfTab = 0;
+const int _storeTab = 1;
+
 class _RootShellState extends State<RootShell> {
-  int _index = 0;
+  int _index = _shelfTab;
   bool _backendReady = false;
 
   /// 首页 feed 的滚动控制器，由壳层持有以便底部栏触发回顶部。
@@ -444,7 +447,7 @@ class _RootShellState extends State<RootShell> {
       setState(() => _index = index);
       return;
     }
-    if (index != 0) return; // 只有首页有 feed 需要回顶
+    if (index != _storeTab) return; // 只有书城有 feed 需要回顶
     final now = DateTime.now();
     final last = _lastHomeTabRepeatAt;
     if (last != null && now.difference(last).inMilliseconds < 800) return;
@@ -459,14 +462,7 @@ class _RootShellState extends State<RootShell> {
   @override
   void initState() {
     super.initState();
-    // 短剧频道在推荐（视频流）与浅色页之间切换时，悬浮 dock 和系统导航栏
-    // 要跟着换肤，所以停在壳层的 build 里监听。
-    dramaLightPageNotifier.addListener(_onDramaChromeChanged);
     _startBackend();
-  }
-
-  void _onDramaChromeChanged() {
-    if (mounted) setState(() {});
   }
 
   Future<void> _startBackend() async {
@@ -489,7 +485,6 @@ class _RootShellState extends State<RootShell> {
 
   @override
   void dispose() {
-    dramaLightPageNotifier.removeListener(_onDramaChromeChanged);
     _homeScroll.dispose();
     super.dispose();
   }
@@ -551,30 +546,21 @@ class _RootShellState extends State<RootShell> {
       return ValueListenableBuilder<int>(
         valueListenable: desktopTab,
         builder: (context, index, _) {
-          AudioFloatingRouteScope.configure(context, hidden: index == 1);
+          AudioFloatingRouteScope.configure(context);
           return LazyIndexedStack(
             index: index,
             children: [
+              LibraryPage(onBrowse: () => desktopTab.value = _storeTab),
               HomePage(cueLoader: () => ApiClient.instance.searchCue()),
-              const DramaPage(),
-              LibraryPage(
-                onBrowse: () => desktopTab.value = 0,
-                onFindDrama: () => desktopTab.value = 1,
-              ),
               const MinePage(),
             ],
           );
         },
       );
     }
-    AudioFloatingRouteScope.configure(context, hidden: _index == 1);
+    AudioFloatingRouteScope.configure(context);
     final palette = HomePalette.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isDramaTab = _index == 1;
-    // 短剧的推荐频道压在全屏视频流上，dock 用深色玻璃；看剧/漫剧/最近/收藏
-    // 是浅色页，dock 跟主题走，否则浅色外观下页面是奶白、dock 还是黑的。
-    final dramaOnVideo = isDramaTab && !dramaLightPageNotifier.value;
-    final glassDark = isDark || dramaOnVideo;
     // 墨水屏模式：本 build 由 Theme 变化触发重建（上面读了 Theme.of），
     // 这里直接读 notifier 当前值即可拿到最新开关，不另加监听。
     final eink = einkModeNotifier.value;
@@ -589,7 +575,7 @@ class _RootShellState extends State<RootShell> {
         shadowColor: Colors.transparent,
         indicatorColor: eink
             ? Colors.black
-            : HomePalette.accent.withValues(alpha: glassDark ? 0.20 : 0.12),
+            : HomePalette.accent.withValues(alpha: isDark ? 0.20 : 0.12),
         indicatorShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -600,7 +586,7 @@ class _RootShellState extends State<RootShell> {
                 ? (eink ? Colors.white : HomePalette.accent)
                 : (eink
                       ? Colors.black
-                      : (glassDark
+                      : (isDark
                             ? Colors.white.withValues(alpha: 0.65)
                             : palette.muted)),
           ),
@@ -614,10 +600,10 @@ class _RootShellState extends State<RootShell> {
             color: states.contains(WidgetState.selected)
                 ? (eink
                       ? Colors.black
-                      : (glassDark ? HomePalette.accent : palette.accentText))
+                      : (isDark ? HomePalette.accent : palette.accentText))
                 : (eink
                       ? Colors.black
-                      : (glassDark
+                      : (isDark
                             ? Colors.white.withValues(alpha: 0.65)
                             : palette.muted)),
           ),
@@ -630,19 +616,14 @@ class _RootShellState extends State<RootShell> {
         elevation: 0,
         destinations: const [
           NavigationDestination(
-            icon: Icon(LucideIcons.house),
-            selectedIcon: Icon(LucideIcons.house),
-            label: '首页',
-          ),
-          NavigationDestination(
-            icon: Icon(LucideIcons.clapperboard),
-            selectedIcon: Icon(LucideIcons.clapperboard),
-            label: '短剧',
-          ),
-          NavigationDestination(
             icon: Icon(LucideIcons.library_big),
             selectedIcon: Icon(LucideIcons.library_big),
             label: '书架',
+          ),
+          NavigationDestination(
+            icon: Icon(LucideIcons.house),
+            selectedIcon: Icon(LucideIcons.house),
+            label: '书城',
           ),
           NavigationDestination(
             icon: Icon(LucideIcons.circle_user_round),
@@ -653,20 +634,18 @@ class _RootShellState extends State<RootShell> {
       ),
     );
 
-    // 静态半透明底：与毛玻璃同色，供短剧 tab 复用（短剧 tab 背后是每帧
-    // 变化的视频流，BackdropFilter 每帧重算模糊，GPU 满负荷；该 tab 下
-    // 用静态底，外观几乎不变；切出短剧 tab 后恢复毛玻璃）。OLED 纯黑直接
-    // 用不透明的近黑底：纯黑画布上毛玻璃只会晕出一圈灰，还白白模糊每帧。
+    // 毛玻璃的底色。OLED 纯黑直接用不透明的近黑底：纯黑画布上毛玻璃只会
+    // 晕出一圈灰，还白白模糊每帧。
     final staticNavBar = Container(
       decoration: BoxDecoration(
         color: oled
             ? const Color(0xFF0C0C0E)
-            : (glassDark
+            : (isDark
                   ? const Color(0xFF161619).withValues(alpha: 0.72)
                   : Colors.white.withValues(alpha: 0.82)),
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color: glassDark
+          color: isDark
               ? Colors.white.withValues(alpha: 0.16)
               : Colors.white.withValues(alpha: 0.75),
           width: 0.8,
@@ -677,44 +656,29 @@ class _RootShellState extends State<RootShell> {
 
     // 系统导航栏（Android 底部系统自绘的那条）按当前画布取色。Flutter 的
     // light / dark 两套预设都把它写成纯黑底 + 白图标，浅色页面下会在最底部
-    // 留一条突兀的黑带；短剧只有视频流（推荐）背后是视频，仍用黑。
-    final lightSystemIcons = dramaOnVideo || isDark;
+    // 留一条突兀的黑带。
     return Scaffold(
       extendBody: true,
-      // 状态栏图标亮度挂在壳层、按选中 tab 切换：短剧页是黑底视频流（官方
-      // SeriesMallFragment 的透明顶栏直接压在 feed 上），深色图标在黑底上
-      // 整条状态栏都看不见，必须浅色；其余三页浅色底用深色。样式放壳层而不是
-      // 各页内部，是因为 IndexedStack 里未选中的页不参与绘制，页内
-      // AnnotatedRegion 切走后会残留上一个页的样式。
+      // 样式放壳层而不是各页内部，是因为 IndexedStack 里未选中的页不参与
+      // 绘制，页内 AnnotatedRegion 切走后会残留上一个页的样式。
       body: AnnotatedRegion<SystemUiOverlayStyle>(
         value:
-            (lightSystemIcons
-                    ? SystemUiOverlayStyle.light
-                    : SystemUiOverlayStyle.dark)
+            (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
                 .copyWith(
-                  systemNavigationBarColor: dramaOnVideo
-                      ? Colors.black
-                      : palette.canvas,
-                  systemNavigationBarDividerColor: dramaOnVideo
-                      ? Colors.black
-                      : palette.canvas,
-                  systemNavigationBarIconBrightness: lightSystemIcons
+                  systemNavigationBarColor: palette.canvas,
+                  systemNavigationBarDividerColor: palette.canvas,
+                  systemNavigationBarIconBrightness: isDark
                       ? Brightness.light
                       : Brightness.dark,
                 ),
         child: LazyIndexedStack(
           index: _index,
           children: [
+            // 空书架上的「去书城找书」切到书城 tab。
+            LibraryPage(onBrowse: () => setState(() => _index = _storeTab)),
             HomePage(
               scrollController: _homeScroll,
               cueLoader: () => ApiClient.instance.searchCue(),
-            ),
-            const DramaPage(),
-            // 空书架上的「去书城找书」切回首页 tab；收藏空态的「找短剧」
-            // 切到短剧 tab。
-            LibraryPage(
-              onBrowse: () => setState(() => _index = 0),
-              onFindDrama: () => setState(() => _index = 1),
             ),
             const MinePage(),
           ],
@@ -736,14 +700,14 @@ class _RootShellState extends State<RootShell> {
                     : [
                         BoxShadow(
                           color: Colors.black.withValues(
-                            alpha: glassDark ? 0.38 : 0.08,
+                            alpha: isDark ? 0.38 : 0.08,
                           ),
                           blurRadius: 22,
                           offset: const Offset(0, 8),
                         ),
                         BoxShadow(
                           color: HomePalette.accent.withValues(
-                            alpha: glassDark ? 0.06 : 0.03,
+                            alpha: isDark ? 0.06 : 0.03,
                           ),
                           blurRadius: 14,
                           offset: const Offset(0, 2),
@@ -753,9 +717,6 @@ class _RootShellState extends State<RootShell> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(28),
                 // 墨水屏：BackdropFilter 毛玻璃会把底部栏变成一团灰，改实色。
-                // 短剧 tab：背后是每帧变化的视频流，BackdropFilter 每帧都要
-                // 重算模糊，GPU 一直满负荷；该 tab 下改用同色静态半透明底，
-                // 外观几乎不变，省掉每帧重栅格化。切出短剧 tab 后恢复毛玻璃。
                 child: eink
                     ? Container(
                         decoration: BoxDecoration(
@@ -765,7 +726,7 @@ class _RootShellState extends State<RootShell> {
                         ),
                         child: navBar,
                       )
-                    : isDramaTab || oled
+                    : oled
                     ? staticNavBar
                     : BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),

@@ -47,7 +47,7 @@ class AboutPage extends StatelessWidget {
           const _AboutHeading(),
           const SizedBox(height: 16),
           Text(
-            '什锦铺把小说、短剧、漫剧、漫画和听书聚到一起。'
+            '什锦铺是一个专注小说阅读的客户端。'
             '所有签名与解密都在你的手机本地完成，不依赖第三方服务。',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: palette.muted,
@@ -189,7 +189,7 @@ class _AboutHeading extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          '小说 / 短剧 / 漫剧 / 漫画 / 听书聚合客户端',
+          '小说阅读客户端',
           textAlign: TextAlign.center,
           style: TextStyle(color: palette.muted, fontSize: 13),
         ),

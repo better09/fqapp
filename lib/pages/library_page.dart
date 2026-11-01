@@ -28,7 +28,6 @@ import '../services/reader_history.dart';
 import '../services/shelf_store.dart';
 import '../services/update_check_gate.dart';
 import '../widgets/bookshelf_card.dart';
-import '../widgets/home/home_chip.dart';
 import '../widgets/home/home_design.dart';
 import '../widgets/shelf/shelf_design.dart';
 import '../widgets/shelf/shelf_empty.dart';
@@ -49,13 +48,8 @@ part 'library_shelf_widgets.dart';
 /// 6.0 以前的版本在这里存的是列数 (2..6)，读取时迁移成宫格。
 const _bookshelfLayoutPreference = 'bookshelf_layout';
 
-/// 顶栏一级 tab 的官方文案（amg.xml 的 SlidingTabLayout；顺序同官方
-/// 书架页：书架 / 历史 / 收藏）。官方还有「圈子」，本地无此功能不设。
-const _tabTitles = ['书架', '浏览历史', '收藏'];
-
-/// 官方分工：书架 tab 只放书籍类，追剧 / 追漫的视频类只进「收藏」tab
-/// （与短剧页收藏频道同一批 [ShelfStore] 数据）。
-bool _isVideoKind(String kind) => kind == 'video' || kind == 'manju';
+/// 顶栏一级 tab：书架 / 浏览历史。只展示小说（[isNovelKind]）。
+const _tabTitles = ['书架', '浏览历史'];
 
 enum _MenuAction {
   importBook('导入图书', null, LucideIcons.plus),
@@ -79,18 +73,13 @@ Duration _motionDuration(BuildContext context, int milliseconds) =>
     : Duration(milliseconds: milliseconds);
 
 /// 书架页：L1 标题栏（tab + 搜索 + 更多；菜单承载版式/清空历史/离线缓存）/
-/// L2 工具栏（今日已读 + 版式分段；收藏 tab 为类型筛选 + 版式分段）/
-/// L3 内容区（三档版式）+ 编辑态（长按卡片进入，提供全选与移出书架）。
-/// 列表数据分别来自 [ShelfStore]（本地加入书架集合，按官方分工拆进
-/// 书架与收藏两个 tab）与 [LibraryStore]（阅读历史）。
+/// L2 工具栏（今日已读 + 版式分段）/ L3 内容区（三档版式）+ 编辑态（长按
+/// 卡片进入，提供全选与移出书架）。列表数据分别来自 [ShelfStore]（本地加入
+/// 书架集合）与 [LibraryStore]（阅读历史）。
 class LibraryPage extends StatefulWidget {
-  /// 空书架上的「去书城找书」要切到首页 tab；由 RootShell 注入，测试里可以为
+  /// 空书架上的「去书城找书」要切到书城 tab；由 RootShell 注入，测试里可以为
   /// 空，此时按钮不响应。
   final VoidCallback? onBrowse;
-
-  /// 收藏 tab 空态上的「找短剧」要切到短剧 tab；由 RootShell 注入，测试里
-  /// 可以为空，此时按钮不响应。
-  final VoidCallback? onFindDrama;
 
   /// 离线直读要用的三件外部依赖；都缺省走真实实现，注入后测试可完全离线
   /// （与缓存页、详情页的注入同一套路）。
@@ -107,7 +96,6 @@ class LibraryPage extends StatefulWidget {
   const LibraryPage({
     super.key,
     this.onBrowse,
-    this.onFindDrama,
     this.cacheStore,
     this.readerStore,
     this.connectivity,
@@ -133,11 +121,6 @@ mixin _LibraryPageStateBase on State<LibraryPage>, WidgetsBindingObserver {
   int _todayMinutes = 0;
   List<_ShelfEntry> _shelf = const [];
   List<_ShelfEntry> _browseHistory = const [];
-  List<_ShelfEntry> _collection = const [];
-
-  /// 收藏 tab 的类型筛选：null 全部 / video 短剧 / manju 漫剧（官方还有
-  /// 「其他视频」，本地没有这种 kind，不放空壳胶囊）。
-  String? _collectionFilter;
   bool _visible = false;
   final Map<String, int> _latestChapterCounts = {};
   final _updateChecks = UpdateCheckGate();
@@ -252,26 +235,19 @@ mixin _LibraryPageStateBase on State<LibraryPage>, WidgetsBindingObserver {
     if (!mounted) return;
     final history = LibraryStore.instance.historySnapshot();
     setState(() {
-      final records = ShelfStore.instance.records();
       _shelf = _shelfEntries([
-        for (final record in records)
-          if (!_isVideoKind(record.item.kind)) record,
-      ], history);
-      _collection = _shelfEntries([
-        for (final record in records)
-          if (_isVideoKind(record.item.kind)) record,
+        for (final record in ShelfStore.instance.records())
+          if (isNovelKind(record.item.kind)) record,
       ], history);
       _browseHistory = [
-        for (final entry in history) _ShelfEntry.fromHistory(entry),
+        for (final entry in history)
+          if (isNovelKind(entry['kind']?.toString() ?? 'book'))
+            _ShelfEntry.fromHistory(entry),
       ];
       // 选中集合随数据回真：条目在别处被移出 / 删除后，它的键不该继续占着
       // 「已选择 N 本」，也不该把全选判定带偏。
       final available = {
-        for (final entry in switch (_tab) {
-          1 => _browseHistory,
-          2 => _collection,
-          _ => _shelf,
-        })
+        for (final entry in _tab == 1 ? _browseHistory : _shelf)
           entry.selectionKey,
       };
       _selected.removeWhere((key) => !available.contains(key));
@@ -402,7 +378,6 @@ class _LibraryPageState extends State<LibraryPage>
                       ),
               ),
               if (!_editing && _tab == 0) _toolbar(palette),
-              if (!_editing && _tab == 2) _collectionToolbar(palette),
               Expanded(
                 child: TabSwipeArea(
                   index: _tab,

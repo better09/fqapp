@@ -83,7 +83,10 @@ class _MinePageState extends State<MinePage> {
     _storeDirty = false;
     final store = LibraryStore.instance;
     final stats = ReadingStats.from(
-      history: store.historySnapshot(),
+      history: [
+        for (final entry in store.historySnapshot())
+          if (isNovelKind(entry['kind']?.toString() ?? 'book')) entry,
+      ],
       readTime: store.readTimeSnapshot(),
       readTimeKinds: store.readTimeKindSnapshot(),
     );

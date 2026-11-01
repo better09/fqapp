@@ -13,11 +13,13 @@ import 'package:fqapp/pages/home_provider.dart';
 import 'package:fqapp/pages/library_page.dart';
 import 'package:fqapp/pages/reader_page.dart';
 import 'package:fqapp/services/book_open_preferences.dart';
+import 'package:fqapp/services/book_updates.dart';
 import 'package:fqapp/services/api_client.dart';
 import 'package:fqapp/services/chapter_cache_store.dart';
 import 'package:fqapp/services/connectivity_status.dart';
 import 'package:fqapp/services/library_store.dart';
 import 'package:fqapp/services/shelf_store.dart';
+import 'package:fqapp/widgets/home/home_design.dart';
 import 'package:fqapp/widgets/home/home_reading_row.dart';
 import 'package:fqapp/widgets/lazy_indexed_stack.dart';
 
@@ -133,8 +135,9 @@ void main() {
       expect(find.text('第4章 · 50%'), findsWidgets);
     });
 
-    testWidgets('有总章数时显示「第 N/M 章」，读完整本显示「共 M 章·已读完」（issue #110）',
-        (tester) async {
+    testWidgets('有总章数时显示「第 N/M 章」，读完整本显示「共 M 章·已读完」（issue #110）', (
+      tester,
+    ) async {
       await tester.runAsync(() async {
         await ShelfStore.instance.add(_item('mid-book', title: '读了一半'));
         await ShelfStore.instance.add(_item('done-book', title: '读完了'));
@@ -162,10 +165,39 @@ void main() {
       await tester.pumpAndSettle();
 
       // 总章数多、剩余章数少时，纯百分比会显示 26%/100% 无法区分；
-      // 章序号能直接看出还剩多少。
-      expect(find.text('第100章 · 共380章'), findsWidgets);
+      // 章序号能直接看出还剩多少，未读章数排在最前面。
+      expect(find.text('280章未读 · 第100章 · 共380章'), findsWidgets);
       expect(find.text('共380章·已读完'), findsWidgets);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('未读章数用强调色高亮，浏览历史不显示未读', (tester) async {
+      await tester.runAsync(() async {
+        await ShelfStore.instance.add(_item('unread-book', title: '有未读'));
+        await LibraryStore.instance.addHistory({
+          'id': 'unread-book',
+          'kind': 'book',
+          'title': '有未读',
+          'episode': 9,
+          'chapterCount': 15,
+          'progress': 0.6,
+          'time': DateTime.now().millisecondsSinceEpoch,
+        });
+      });
+
+      await tester.pumpWidget(_app());
+      await tester.pumpAndSettle();
+      final line = tester.widget<Text>(
+        find.byKey(const Key('bookshelf-info-line')).first,
+      );
+      final unread = (line.textSpan! as TextSpan).children!.first as TextSpan;
+      expect(unread.text, '5章未读');
+      expect(unread.style?.color, HomePalette.accent);
+
+      await tester.tap(find.text('浏览历史'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('章未读'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
     });
 
     testWidgets('书架按最近阅读排序，没有阅读记录的按加入时间', (tester) async {
@@ -371,7 +403,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('收藏 tab 只放短剧/漫剧，书架 tab 只放书籍', (tester) async {
+    testWidgets('书架只放小说，没有收藏 tab', (tester) async {
       await tester.runAsync(() async {
         await ShelfStore.instance.add(_item('plain-book', title: '架上小说'));
         await ShelfStore.instance.add(
@@ -380,87 +412,18 @@ void main() {
         await ShelfStore.instance.add(
           _item('m1', title: '追的漫剧', kind: 'manju'),
         );
+        await ShelfStore.instance.add(
+          _item('c1', title: '追的漫画', kind: 'manga'),
+        );
       });
       await tester.pumpWidget(_app());
       await tester.pumpAndSettle();
 
-      // 书架 tab：只有书，视频类不混进来。
       expect(find.text('架上小说'), findsWidgets);
       expect(find.text('追的短剧'), findsNothing);
       expect(find.text('追的漫剧'), findsNothing);
-
-      await tester.tap(find.text('收藏'));
-      await tester.pumpAndSettle();
-      expect(find.text('追的短剧'), findsWidgets);
-      expect(find.text('追的漫剧'), findsWidgets);
-      expect(find.text('架上小说'), findsNothing);
-
-      // 筛选胶囊：短剧只剩 video，漫剧只剩 manju，全部恢复两条都在。
-      await tester.tap(find.byKey(const Key('library-collection-filter-video')));
-      await tester.pumpAndSettle();
-      expect(find.text('追的短剧'), findsWidgets);
-      expect(find.text('追的漫剧'), findsNothing);
-      await tester.tap(find.byKey(const Key('library-collection-filter-manju')));
-      await tester.pumpAndSettle();
-      expect(find.text('追的短剧'), findsNothing);
-      expect(find.text('追的漫剧'), findsWidgets);
-      await tester.tap(find.byKey(const Key('library-collection-filter-all')));
-      await tester.pumpAndSettle();
-      expect(find.text('追的短剧'), findsWidgets);
-      expect(find.text('追的漫剧'), findsWidgets);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('收藏 tab 编辑态移出：免确认直接执行，书籍不受影响', (tester) async {
-      await tester.runAsync(() async {
-        await ShelfStore.instance.add(_item('plain-book', title: '架上小说'));
-        await ShelfStore.instance.add(
-          _item('v1', title: '追的短剧', kind: 'video'),
-        );
-      });
-      await tester.pumpWidget(_app());
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('收藏'));
-      await tester.pumpAndSettle();
-
-      await tester.longPress(find.byKey(const ValueKey('shelf-grid-video:v1')));
-      await tester.pumpAndSettle();
-      expect(find.text('已选择 1 部'), findsOneWidget);
-
-      await tester.runAsync(() async {
-        await tester.tap(find.byKey(const Key('shelf-remove-action')));
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-      });
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      // 短剧已移出，书还在架上。
-      expect(
-        ShelfStore.instance.records().map((record) => record.item.id),
-        ['plain-book'],
-      );
-      expect(find.text('暂无收藏内容'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('收藏为空：空态文案随筛选变化，「找短剧」触发回调', (tester) async {
-      var findDramaCalls = 0;
-      await tester.runAsync(() async {
-        await ShelfStore.instance.add(
-          _item('v1', title: '追的短剧', kind: 'video'),
-        );
-      });
-      await tester.pumpWidget(_app(onFindDrama: () => findDramaCalls++));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('收藏'));
-      await tester.pumpAndSettle();
-
-      // 有短剧、无漫剧：切到漫剧筛选是「暂无漫剧」+ 找短剧入口。
-      await tester.tap(find.byKey(const Key('library-collection-filter-manju')));
-      await tester.pumpAndSettle();
-      expect(find.text('暂无漫剧'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('collection-find-drama-button')));
-      await tester.pumpAndSettle();
-      expect(findDramaCalls, 1);
+      expect(find.text('追的漫画'), findsNothing);
+      expect(find.text('收藏'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
@@ -847,43 +810,11 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
       });
     }
-
-    testWidgets('关闭书架直读时即使有最近章节缓存也先看详情', (tester) async {
-      addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
-      BookOpenPreferences.instance.resetForTest();
-      await BookOpenPreferences.instance.setShelfDirectReader(false);
-      await tester.runAsync(
-        () => ShelfStore.instance.add(_item('cached', title: '有缓存的书')),
-      );
-      final cache = MemoryChapterCache();
-      await cache.write(
-        bookId: 'cached',
-        chapterId: '1',
-        title: '第一章',
-        text: '缓存正文',
-      );
-      await tester.pumpWidget(
-        _app(
-          cache: cache,
-          readerStore: MemoryReaderStore(entry: {'chapterId': '1'}),
-          connectivity: () async => (online: true, metered: false),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('有缓存的书'));
-      await tester.pump();
-      await tester.pump();
-      expect(find.byType(ReaderPage, skipOffstage: false), findsNothing);
-      expect(
-        tester.widget<DetailPage>(find.byType(DetailPage)).autoOpenReader,
-        isFalse,
-      );
-      await tester.pumpWidget(const SizedBox.shrink());
-    });
   });
 
   group('书架离线直读', () {
-    testWidgets('导入章节的小说开启自动续读，普通书籍仍走原入口', (tester) async {
+    testWidgets('在线时拉目录后按上次进度直接进阅读器，不经过详情页', (tester) async {
+      addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
       await tester.runAsync(() async {
         await ShelfStore.instance.add(_item('101', title: '已导入的小说'));
         await LibraryStore.instance.mergeFanqie([
@@ -898,74 +829,71 @@ void main() {
           },
         ]);
       });
+      final requested = <String>[];
       await tester.pumpWidget(
         _app(
           cache: MemoryChapterCache(),
-          connectivity: () async => (online: false, metered: false),
+          connectivity: () async => (online: true, metered: false),
+          directoryLoader: (id) async {
+            requested.add(id);
+            return [
+              Chapter(itemId: '201', title: '第一章', volumeName: ''),
+              Chapter(itemId: '202', title: '第二章', volumeName: ''),
+            ];
+          },
         ),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('已导入的小说'));
-      await tester.pump();
-      await tester.pump();
-      final detail = tester.widget<DetailPage>(find.byType(DetailPage));
-      expect(detail.autoOpenReader, true);
-      expect(detail.item.id, '101');
-      expect(
-        (await LibraryStore.instance.historyEntry('101'))?['chapterId'],
-        '202',
+      await _pumpUntil(
+        tester,
+        () =>
+            find.byType(ReaderPage, skipOffstage: false).evaluate().isNotEmpty,
       );
-      await tester.pumpWidget(const SizedBox.shrink());
+      expect(requested, ['101']);
+      final reader = tester.widget<ReaderPage>(
+        find.byType(ReaderPage, skipOffstage: false),
+      );
+      expect(reader.startIndex, 1);
+      expect(reader.chapters.map((c) => c.itemId), ['201', '202']);
+      expect(find.byType(DetailPage, skipOffstage: false), findsNothing);
     });
 
-    testWidgets('普通书籍默认直达阅读器，关掉书架开关后停在详情页', (tester) async {
+    testWidgets('导入的阅读锚点不在目录里时提示并回到详情页，不从第一章覆盖进度', (tester) async {
+      addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
       await tester.runAsync(() async {
-        await ShelfStore.instance.add(_item('plain', title: '普通小说'));
+        await ShelfStore.instance.add(_item('102', title: '锚点丢失的书'));
+        await LibraryStore.instance.mergeFanqie([
+          {
+            'id': '102',
+            'bookId': '102',
+            'kind': 'book',
+            'time': 100,
+            'chapterId': '999',
+            'episode': 5,
+            'fanqieImported': true,
+          },
+        ]);
       });
-      // 页面与偏好都是进程级单例：先回到默认值再走一遍设置。
-      BookOpenPreferences.instance.resetForTest();
-      Future<void> openPlainBook() async {
-        await tester.pumpWidget(
-          _app(
-            cache: MemoryChapterCache(),
-            connectivity: () async => (online: false, metered: false),
-          ),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('普通小说'));
-        // 详情页停在加载态（转圈动画不会停），所以等 DetailPage 建出来而不是
-        // pumpAndSettle；openBookDetail 先 await 偏好加载，需要真实事件循环的回合。
-        for (
-          var attempt = 0;
-          attempt < 20 &&
-              find.byType(DetailPage, skipOffstage: false).evaluate().isEmpty;
-          attempt++
-        ) {
-          await tester.runAsync(
-            () => Future<void>.delayed(const Duration(milliseconds: 10)),
-          );
-          await tester.pump();
-        }
-      }
-
-      await openPlainBook();
-      expect(
-        tester
-            .widget<DetailPage>(find.byType(DetailPage, skipOffstage: false))
-            .autoOpenReader,
-        isTrue,
+      await tester.pumpWidget(
+        _app(
+          cache: MemoryChapterCache(),
+          connectivity: () async => (online: true, metered: false),
+          directoryLoader: (_) async => [
+            Chapter(itemId: '1', title: '第一章', volumeName: ''),
+          ],
+        ),
       );
-      await tester.pumpWidget(const SizedBox.shrink());
-
-      await BookOpenPreferences.instance.setShelfDirectReader(false);
-      await openPlainBook();
-      expect(
-        tester
-            .widget<DetailPage>(find.byType(DetailPage, skipOffstage: false))
-            .autoOpenReader,
-        isFalse,
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('锚点丢失的书'));
+      await _pumpUntil(
+        tester,
+        () =>
+            find.byType(DetailPage, skipOffstage: false).evaluate().isNotEmpty,
       );
-      await tester.pumpWidget(const SizedBox.shrink());
+      expect(find.textContaining('导入的章节暂不在当前目录中'), findsOneWidget);
+      expect(find.byType(DetailPage, skipOffstage: false), findsOneWidget);
+      expect(find.byType(ReaderPage, skipOffstage: false), findsNothing);
     });
 
     testWidgets('无网且本地有缓存时，点书直接进阅读器而不是详情页', (tester) async {
@@ -984,37 +912,52 @@ void main() {
         _app(
           cache: cache,
           connectivity: () async => (online: false, metered: false),
+          directoryLoader: (_) async => fail('离线时不应该请求目录'),
         ),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('离线直读的书'));
-      await tester.pumpAndSettle();
+      await _pumpUntil(
+        tester,
+        () =>
+            find.byType(ReaderPage, skipOffstage: false).evaluate().isNotEmpty,
+      );
       expect(find.byType(ReaderPage, skipOffstage: false), findsOneWidget);
-      // 详情页要联网取目录，离线时正是它把「已下载」变成读不了。
       expect(find.byType(DetailPage, skipOffstage: false), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
-    testWidgets('无网但没有缓存时，仍然走详情页', (tester) async {
-      await tester.runAsync(() async {
-        await ShelfStore.instance.add(_item('no-cache-book', title: '没缓存的书'));
+    for (final online in [true, false]) {
+      testWidgets('${online ? '目录加载失败' : '无网'}且没有缓存时提示重试，不进详情页', (
+        tester,
+      ) async {
+        await tester.runAsync(() async {
+          await ShelfStore.instance.add(_item('no-cache-book', title: '没缓存的书'));
+        });
+        var requests = 0;
+        await tester.pumpWidget(
+          _app(
+            cache: MemoryChapterCache(),
+            connectivity: () async => (online: online, metered: false),
+            directoryLoader: (_) async {
+              requests++;
+              throw Exception('目录请求失败');
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('没缓存的书'));
+        await _pumpUntil(
+          tester,
+          () => find.text('目录加载失败，请检查网络后重试').evaluate().isNotEmpty,
+        );
+        expect(requests, online ? 1 : 0);
+        expect(find.text('目录加载失败，请检查网络后重试'), findsOneWidget);
+        expect(find.byType(DetailPage, skipOffstage: false), findsNothing);
+        expect(find.byType(ReaderPage, skipOffstage: false), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
       });
-
-      await tester.pumpWidget(
-        _app(
-          cache: MemoryChapterCache(),
-          connectivity: () async => (online: false, metered: false),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('没缓存的书'));
-      // 详情页会去联网取目录，测试宿主里必然失败；这里只验它被推了出来。
-      await tester.pump();
-      await tester.pump();
-      expect(find.byType(DetailPage, skipOffstage: false), findsOneWidget);
-      expect(find.byType(ReaderPage, skipOffstage: false), findsNothing);
-      await tester.pumpWidget(const SizedBox.shrink());
-    });
+    }
 
     testWidgets('空书架给出「查看离线缓存」入口', (tester) async {
       await tester.pumpWidget(_app());
@@ -1056,7 +999,7 @@ void main() {
     await tester.drag(find.byType(LibraryPage), const Offset(240, 0));
     await tester.pumpAndSettle();
     expect(find.text('书架暂无书籍'), findsOneWidget);
-    // 已经在首个 tab 上继续右滑：边界，不环绕到「收藏」。
+    // 已经在首个 tab 上继续右滑：边界，不环绕到「浏览历史」。
     await tester.drag(find.byType(LibraryPage), const Offset(240, 0));
     await tester.pumpAndSettle();
     expect(find.text('书架暂无书籍'), findsOneWidget);
@@ -1086,6 +1029,17 @@ Future<void> _settlePageWrite(
   await tester.pumpAndSettle();
 }
 
+/// Like [_settlePageWrite], for pages that never settle (the reader and the
+/// detail page keep a loading spinner running in the test host).
+Future<void> _pumpUntil(WidgetTester tester, bool Function() done) async {
+  for (var attempt = 0; attempt < 50 && !done(); attempt++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump();
+  }
+}
+
 Future<void> _chooseLayout(WidgetTester tester, String action) async {
   await tester.tap(find.byKey(const Key('library-more-button')));
   await tester.pumpAndSettle();
@@ -1095,17 +1049,17 @@ Future<void> _chooseLayout(WidgetTester tester, String action) async {
 
 Widget _app({
   VoidCallback? onBrowse,
-  VoidCallback? onFindDrama,
   ChapterCache? cache,
   ReaderStore? readerStore,
   Future<ConnectivityView> Function()? connectivity,
+  BookDirectoryLoader? directoryLoader,
 }) => MaterialApp(
   home: LibraryPage(
     onBrowse: onBrowse,
-    onFindDrama: onFindDrama,
     cacheStore: cache,
     readerStore: readerStore,
     connectivity: connectivity,
+    directoryLoader: directoryLoader,
   ),
 );
 

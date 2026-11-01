@@ -103,6 +103,146 @@ Future<bool> openRecentBook(
   return true;
 }
 
+/// [openBookInReader] 的结果。
+enum BookOpenOutcome {
+  opened,
+
+  /// 目录拉不到、本地也没有可读缓存。
+  unavailable,
+
+  /// 番茄导入的阅读锚点不在当前目录里：不能静默从第一章读起覆盖进度。
+  missingImportedChapter,
+}
+
+/// 书架点书直达阅读器，不经过详情页。
+///
+/// 依次尝试：本地缓存续读（[openRecentBook]）→ 联网拉目录后按上次进度打开
+/// → 目录拉不到时用离线缓存打开。离线时不发请求，直接用离线缓存。
+Future<BookOpenOutcome> openBookInReader(
+  BuildContext context,
+  MediaItem item, {
+  ChapterCache? cache,
+  ReaderStore? readerStore,
+  BookDirectoryLoader? directoryLoader,
+  Future<ConnectivityView> Function()? connectivity,
+}) async {
+  if (item.kind != 'book' || item.id.isEmpty) {
+    return BookOpenOutcome.unavailable;
+  }
+  if (await openRecentBook(
+    context,
+    item,
+    cache: cache,
+    readerStore: readerStore,
+    directoryLoader: directoryLoader,
+  )) {
+    return BookOpenOutcome.opened;
+  }
+  if (!context.mounted) return BookOpenOutcome.opened;
+  final store = readerStore ?? LibraryStore.instance;
+  final network = await (connectivity ?? currentConnectivity)();
+  if (!context.mounted) return BookOpenOutcome.opened;
+  final chapters = network.online
+      ? await _whileLoading(context, () async {
+          try {
+            return await (directoryLoader ?? loadBookDirectory)(item.id);
+          } catch (_) {
+            return const <Chapter>[];
+          }
+        })
+      : const <Chapter>[];
+  // 用户在加载时按了返回：当作取消，不再弹出阅读器。
+  if (chapters == null || !context.mounted) return BookOpenOutcome.opened;
+  if (chapters.isEmpty) {
+    return await _openOfflineCopy(context, item, cache: cache, readerStore: store)
+        ? BookOpenOutcome.opened
+        : BookOpenOutcome.unavailable;
+  }
+  Map<String, dynamic>? saved;
+  try {
+    saved = await ReaderHistory(store).load(item.id);
+  } catch (_) {
+    // 历史读不到就从第一章开始，不挡住开书。
+  }
+  if (!context.mounted) return BookOpenOutcome.opened;
+  if (saved != null && saved['kind'] != null && saved['kind'] != 'book') {
+    saved = null;
+  }
+  final restored = saved == null
+      ? null
+      : resumeEpisodeIndex({
+          ...saved,
+          if (saved['chapterId'] != null)
+            'chapterId': saved['chapterId'].toString(),
+        }, chapters);
+  if (restored == null &&
+      saved?['fanqieImported'] == true &&
+      saved?['chapterId'] != null) {
+    return BookOpenOutcome.missingImportedChapter;
+  }
+  await Navigator.push<void>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => ReaderPage(
+        bookId: item.id,
+        title: item.title,
+        cover: item.cover,
+        chapters: chapters,
+        startIndex: restored ?? 0,
+        chapterCache: cache,
+        readerStore: store,
+        shelfItem: item,
+      ),
+    ),
+  );
+  return BookOpenOutcome.opened;
+}
+
+Future<bool> _openOfflineCopy(
+  BuildContext context,
+  MediaItem item, {
+  required ChapterCache? cache,
+  required ReaderStore readerStore,
+}) async {
+  final chapterCache = cache ?? ChapterCacheStore.instance;
+  CachedBook? cached;
+  try {
+    cached = await chapterCache.cachedBook(item.id);
+  } catch (_) {
+    return false;
+  }
+  if (cached == null || !context.mounted) return false;
+  return openCachedBook(
+    context,
+    book: CachedBook(
+      id: cached.id,
+      title: item.title.isNotEmpty ? item.title : cached.title,
+      cover: item.cover.isNotEmpty ? item.cover : cached.cover,
+      chapters: cached.chapters,
+    ),
+    cache: chapterCache,
+    readerStore: readerStore,
+  );
+}
+
+/// 在 [task] 运行期间盖一层加载圈。用户按返回关掉它时返回 null。
+Future<T?> _whileLoading<T>(
+  BuildContext context,
+  Future<T> Function() task,
+) async {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  final route = DialogRoute<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(child: CircularProgressIndicator()),
+  );
+  unawaited(navigator.push(route));
+  final result = await task();
+  if (!route.isActive) return null;
+  navigator.removeRoute(route);
+  return result;
+}
+
 /// 先显示缓存正文，目录更新不阻塞开书，也不重建阅读器的 State。
 class _RecentBookReader extends StatefulWidget {
   final CachedBook book;

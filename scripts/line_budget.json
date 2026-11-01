@@ -1,7 +1,7 @@
 {
   "files": {
     "lib/main.dart": 781,
-    "lib/models/media_item.dart": 1565,
+    "lib/models/media_item.dart": 1568,
     "lib/pages/api_service_page.dart": 601,
     "lib/pages/audio_listening_layout.dart": 664,
     "lib/pages/audio_page.dart": 2131,
@@ -14,10 +14,8 @@
     "lib/pages/home_provider.dart": 1381,
     "lib/pages/log_viewer_page.dart": 757,
     "lib/pages/player_page.dart": 1995,
-    "lib/pages/rank_page.dart": 543,
     "lib/pages/search_page.dart": 1115,
     "lib/pages/series_detail_page.dart": 726,
-    "lib/pages/settings_page.dart": 808,
     "lib/services/api_client.dart": 1813,
     "lib/services/app_log.dart": 622,
     "lib/services/audio_downloader.dart": 625,
@@ -191,8 +189,8 @@
       "symbol": "Widget build(BuildContext context) {"
     },
     "lib/pages/rank_page.dart::_RankRow.build": {
-      "line": 435,
-      "lines": 107,
+      "line": 399,
+      "lines": 88,
       "symbol": "Widget build(BuildContext context) {"
     },
     "lib/pages/search_page.dart::_SearchPageState.build": {
@@ -201,8 +199,8 @@
       "symbol": "Widget build(BuildContext context) {"
     },
     "lib/pages/settings_page.dart::SettingsPage.build": {
-      "line": 33,
-      "lines": 225,
+      "line": 29,
+      "lines": 117,
       "symbol": "Widget build(BuildContext context) {"
     },
     "lib/pages/system_tts_settings_page.dart::_SystemTtsSettingsPageState.build": {

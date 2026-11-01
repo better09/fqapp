@@ -9,13 +9,10 @@ class HomeCategory {
   const HomeCategory(this.label, this.icon);
 }
 
+/// 下标与 [HomeNotifier.tabs] 的本地表一一对应，所以只能截取前缀。
 const homeCategories = [
   HomeCategory('推荐', Icons.circle),
   HomeCategory('小说', Icons.circle),
-  HomeCategory('短剧', Icons.circle),
-  HomeCategory('漫剧', Icons.circle),
-  HomeCategory('漫画', Icons.circle),
-  HomeCategory('听书', Icons.circle),
 ];
 
 /// 书城顶部 tab 条。官方对照（`res/layout/alx.xml` 的 `SlidingTabLayout

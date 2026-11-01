@@ -50,7 +50,7 @@ void main() {
           searchLoader:
               (query, {required int tabType, required int offset}) async => [
                 SearchTab(
-                  title: '综合',
+                  title: '书籍',
                   items: [_item('old', '旧结果')],
                   hasMore: false,
                 ),

@@ -15,65 +15,6 @@ import 'package:fqapp/widgets/home/home_shelf.dart';
 import 'package:fqapp/widgets/home/home_skeleton.dart';
 
 void main() {
-  testWidgets(
-    'manju, manga and audio tabs show the matching feed after insertion',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(320, 850));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
-      MediaItem item(String label) => MediaItem(
-        id: label,
-        title: '$label 作品',
-        cover: '',
-        author: '',
-        badge: '',
-        ep: '',
-        kind: HomeNotifier.tabKinds[label]!,
-      );
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            homeProvider.overrideWith(
-              () => HomeNotifier(
-                homepageLoader:
-                    ({
-                      int tabType = 2,
-                      int offset = 0,
-                      String? sessionId,
-                    }) async => HomepagePage(
-                      items: [
-                        item(
-                          HomeNotifier.tabTypes.entries
-                              .firstWhere((entry) => entry.value == tabType)
-                              .key,
-                        ),
-                      ],
-                      nextOffset: null,
-                      sessionId: null,
-                    ),
-                searchLoader: (query, {int page = 1}) async => [
-                  SearchTab(title: query, items: [item(query)], hasMore: false),
-                ],
-              ),
-            ),
-          ],
-          child: const MaterialApp(home: HomePage()),
-        ),
-      );
-      await tester.pumpAndSettle();
-      for (final label in ['漫剧', '漫画', '听书']) {
-        final index = HomeNotifier.tabs.indexOf(label);
-        final tab = find.byKey(ValueKey('home_category_$index'));
-        await tester.ensureVisible(tab);
-        await tester.pumpAndSettle();
-        await tester.tap(tab);
-        await tester.pumpAndSettle();
-        expect(find.text('$label 作品'), findsOneWidget);
-        expect(tester.takeException(), isNull);
-      }
-    },
-  );
-
   testWidgets('外部 ScrollController 能驱动首页回顶部（底部栏重复点击的依据）', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 850));
     addTearDown(() => tester.binding.setSurfaceSize(null));

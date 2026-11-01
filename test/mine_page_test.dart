@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fqapp/pages/cached_books_page.dart';
 import 'package:fqapp/pages/detail_page.dart';
 import 'package:fqapp/pages/mine_page.dart';
 import 'package:fqapp/pages/settings_page.dart';
@@ -102,17 +103,15 @@ void main() {
     expect(route.builder(context), isA<SettingsPage>());
   });
 
-  testWidgets('offline cache offers the novel and drama caches', (
-    tester,
-  ) async {
+  testWidgets('offline cache opens the novel cache directly', (tester) async {
     addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
     await tester.pumpWidget(const MaterialApp(home: MinePage()));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('离线缓存'), 200);
     await tester.tap(find.text('离线缓存'));
     await tester.pumpAndSettle();
-    expect(find.text('小说离线缓存'), findsOneWidget);
-    expect(find.text('短剧离线缓存'), findsOneWidget);
+    expect(find.byType(CachedBooksPage), findsOneWidget);
+    expect(find.text('短剧离线缓存'), findsNothing);
   });
 
   testWidgets('mine list leaves room for the floating navigation bar', (

@@ -136,13 +136,13 @@ Future<void> _saveProgress(WidgetTester tester, int update) async {
     await LibraryStore.instance.addHistory({
       'id': 'visible-book',
       'bookId': 'visible-book',
-      'kind': 'video',
+      'kind': 'book',
       'title': '最新记录 $update',
       'episode': update,
       'progress': (update + 1) / 100,
       'time': DateTime.now().millisecondsSinceEpoch,
     });
-    await LibraryStore.instance.accumulateReadTime('visible-book', 'video', 60);
+    await LibraryStore.instance.accumulateReadTime('visible-book', 'book', 60);
   });
 }
 
