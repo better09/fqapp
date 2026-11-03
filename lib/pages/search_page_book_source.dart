@@ -1,6 +1,34 @@
 part of 'search_page.dart';
 
 extension _BookSourceSearch on _SearchPageState {
+  Future<void> _executeSearch(String query, {required bool asKeyword}) async {
+    _rememberQuery(query);
+    ++_requestGeneration;
+    // 联想词点下去执行的是另一条查询，草稿要跟着走，否则联想层会盖住结果。
+    ++_suggestGeneration;
+    _rebuild(() {
+      _query = query;
+      _draft = query;
+      _suggestions = const [];
+      // 书旗和书源的 id 都不是番茄作品 id。
+      _idQuery = (!_fanqieSource || asKeyword)
+          ? null
+          : mediaIdFromSearch(query);
+      _feeds = [for (final _ in _SearchPageState._categories) _SearchFeed()];
+    });
+    if (_shuqiSource) {
+      _activeRequest?.cancel();
+      await _searchShuqi(query, _requestGeneration);
+      return;
+    }
+    if (_bookSourceMode) {
+      _activeRequest?.cancel();
+      await _searchBookSources(query, _requestGeneration);
+      return;
+    }
+    await _loadTab(_tabIndex);
+  }
+
   Future<void> _loadBookSourceCatalog(int generation) async {
     if (_bookSources.loaded) return;
     try {
@@ -63,6 +91,7 @@ extension _BookSourceSearch on _SearchPageState {
       await searchLegadoSources(
         sources: sources,
         keyword: query,
+        fetch: widget.bookSourceFetch ?? fetchLegado,
         isCancelled: () => !mounted || generation != _requestGeneration,
         onProgress: (progress) => _applyBookHits(
           feed,

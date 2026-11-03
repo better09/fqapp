@@ -72,6 +72,9 @@ class SearchPage extends StatefulWidget {
   /// 用给定书源搜索。留空按书源规则请求网络。
   final BookSourceQuery? bookSourceQuery;
 
+  /// 书源搜索的请求。测试注入后不访问网络。
+  final LegadoFetcher? bookSourceFetch;
+
   const SearchPage({
     super.key,
     this.initialQuery,
@@ -83,6 +86,7 @@ class SearchPage extends StatefulWidget {
     this.shuqiSearchLoader,
     this.bookSourceCatalog,
     this.bookSourceQuery,
+    this.bookSourceFetch,
     this.initialCategory = SearchCategory.general,
   });
 
@@ -124,8 +128,12 @@ class _SearchPageState extends State<SearchPage> {
 
   final BookSourceSearchSession _bookSources = BookSourceSearchSession();
   String _bookSourceStatus = '按已添加的书源搜索';
+  bool _applyingQuery = false;
 
-  void _rebuild(VoidCallback update) => setState(update);
+  void _rebuild(VoidCallback update) {
+    if (!mounted) return;
+    setState(update);
+  }
 
   bool _layoutChosen = false;
 
@@ -305,6 +313,7 @@ class _SearchPageState extends State<SearchPage> {
 
   /// Debounced so a fast typist does not issue a request per keystroke.
   void _onQueryChanged(String value) {
+    if (_applyingQuery) return;
     _suggestDebounce?.cancel();
     // Invalidate at the edit, before the debounce window. A response for the
     // previous draft must not become selectable under the new text.
@@ -354,43 +363,24 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Future<void> _search(String q, {bool asKeyword = false}) async {
+    if (!mounted) return;
     final query = normalizeSearchQuery(q);
     if (query.isEmpty) return;
     _suggestDebounce?.cancel();
-    if (_ctrl.text != query) {
-      _ctrl.value = TextEditingValue(
-        text: query,
-        selection: TextSelection.collapsed(offset: query.length),
-      );
-    }
     FocusManager.instance.primaryFocus?.unfocus();
-    _rememberQuery(query);
-    ++_requestGeneration;
-    // Picking a suggestion runs a different query than the text typed so far, so
-    // the draft follows the executed query; otherwise the suggestion panel would
-    // linger over the results it just produced.
-    ++_suggestGeneration;
-    setState(() {
-      _query = query;
-      _draft = query;
-      _suggestions = const [];
-      // 书旗和书源的 id 都不是番茄作品 id。
-      _idQuery = (!_fanqieSource || asKeyword)
-          ? null
-          : mediaIdFromSearch(query);
-      _feeds = [for (final _ in _categories) _SearchFeed()];
-    });
-    if (_shuqiSource) {
-      _activeRequest?.cancel();
-      await _searchShuqi(query, _requestGeneration);
-      return;
+    if (_ctrl.text != query) {
+      _applyingQuery = true;
+      _ctrl.text = query;
+      _applyingQuery = false;
     }
-    if (_bookSourceMode) {
-      _activeRequest?.cancel();
-      await _searchBookSources(query, _requestGeneration);
-      return;
+    try {
+      await _executeSearch(query, asKeyword: asKeyword);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
-    await _loadTab(_tabIndex);
   }
 
   /// 切换搜索来源。离开番茄时记住当前分类；点回「番茄」恢复，而不是重置。
@@ -663,6 +653,7 @@ class _SearchPageState extends State<SearchPage> {
     if (_idQuery != null) return;
     final feed = _feeds[_tabIndex];
     if (!_scrollController.hasClients ||
+        _scrollController.positions.length != 1 ||
         !feed.initialized ||
         feed.error != null) {
       return;

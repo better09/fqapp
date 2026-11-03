@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fqapp/services/search_history_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fqapp/legado/book_source.dart';
@@ -114,6 +115,105 @@ void main() {
 
     expect(find.text(bookSourceEmptyMessage), findsOneWidget);
   });
+
+  testWidgets('book source history search does not crash', (tester) async {
+    final calls = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SearchPage(
+          historyStore: _History(['斗破']),
+          searchLoader:
+              (_, {required int tabType, required int offset}) async =>
+                  const [],
+          bookSourceCatalog: () async => [_source('https://a', '甲书源')],
+          bookSourceQuery: ({required sources, required keyword}) async {
+            calls.add(keyword);
+            return LegadoSearchBatch([
+              LegadoHit(
+                source: sources.first,
+                name: keyword,
+                bookUrl: 'https://a/book',
+              ),
+            ], const []);
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('search-source-book')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('斗破'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(calls, ['斗破']);
+    expect(find.text('斗破'), findsWidgets);
+
+    await tester.tap(find.byTooltip('清空'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('斗破'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(calls, ['斗破', '斗破']);
+  });
+
+  testWidgets('book source history search uses the real source rules', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SearchPage(
+          historyStore: _History(['斗破']),
+          searchLoader:
+              (_, {required int tabType, required int offset}) async =>
+                  const [],
+          bookSourceCatalog: () async => [
+            LegadoBookSource({
+              'bookSourceUrl': 'https://ex.com',
+              'bookSourceName': '甲书源',
+              'enabled': true,
+              'bookSourceType': 0,
+              'searchUrl': 'https://ex.com/s?q={{key}}',
+              'ruleSearch': {
+                'bookList': 'class.item',
+                'name': 'tag.a@text',
+                'bookUrl': 'tag.a@href',
+              },
+            }),
+          ],
+          bookSourceFetch: (request) async => LegadoFetched(
+            '<div class="item"><a href="/b/1">斗破苍穹</a></div>',
+            request.url.toString(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('search-source-book')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('斗破'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('斗破苍穹'), findsOneWidget);
+  });
+}
+
+class _History implements SearchHistoryRepository {
+  _History(this.items);
+  List<String> items;
+
+  @override
+  Future<List<String>> load() async => items;
+
+  @override
+  Future<List<String>> add(String query) async =>
+      items = mergeSearchHistory(items, query);
+
+  @override
+  Future<List<String>> remove(String query) async =>
+      items = items.where((value) => value != query).toList();
+
+  @override
+  Future<void> clear() async => items = [];
 }
 
 LegadoBookSource _source(

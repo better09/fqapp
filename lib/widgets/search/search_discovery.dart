@@ -406,7 +406,13 @@ class SearchDiscoveryView extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 220),
             child: InkWell(
-              onTap: () => onSearch(query),
+              // 点下去会立刻拆掉这条记录。同一帧里搜索会卸掉还在处理手势的
+              // InkWell，真机上输入框和列表一起重建时会崩。
+              onTap: () {
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => onSearch(query),
+                );
+              },
               borderRadius: const BorderRadius.horizontal(
                 left: Radius.circular(999),
               ),

@@ -321,11 +321,24 @@ List<Chapter> _readChapterPage(
   for (final node in legadoNodes(document, source.toc.chapterList)) {
     if (_isVolume(node, source.toc.isVolume, pageUrl)) continue;
     final name = legadoFirst(node, source.toc.chapterName, baseUrl: pageUrl);
-    final url = legadoFirst(node, source.toc.chapterUrl, baseUrl: pageUrl);
-    if (name.isEmpty || url.isEmpty || !seen.add(url)) continue;
+    if (name.isEmpty) continue;
+    var url = legadoFirst(node, source.toc.chapterUrl, baseUrl: pageUrl);
+    if (url.isEmpty) url = _chapterFallbackUrl(node, pageUrl, chapters.length);
+    if (!seen.add(url)) continue;
     chapters.add(Chapter(itemId: url, title: name, volumeName: ''));
   }
   return chapters;
+}
+
+/// 规则没写出链接时，用元素或内部锚点的 href；再没有就用页面地址加序号。
+String _chapterFallbackUrl(Object node, String pageUrl, int index) {
+  if (node is Element) {
+    final href =
+        node.attributes['href'] ?? node.querySelector('a')?.attributes['href'];
+    final trimmed = href?.trim() ?? '';
+    if (trimmed.isNotEmpty) return resolveAgainst(pageUrl, trimmed);
+  }
+  return '$pageUrl#chapter-$index';
 }
 
 bool _isVolume(Object node, String? rule, String pageUrl) {

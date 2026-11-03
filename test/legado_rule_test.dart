@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fqapp/pages/source_search_page.dart';
+import 'package:fqapp/models/media_item.dart';
 import 'package:fqapp/legado/analyze_url.dart';
 import 'package:fqapp/legado/book_source.dart';
 import 'package:fqapp/legado/rules.dart';
@@ -137,6 +138,88 @@ void main() {
     expect(failed.errors.single, contains('JavaScript'));
   });
 
+  test('chapter rules match the anchor itself', () async {
+    final chapters = await _loadToc(
+      const {
+        'chapterList': 'id.list@tag.a',
+        'chapterName': 'tag.a@text',
+        'chapterUrl': 'tag.a@href',
+      },
+      '''
+      <div id="list">
+        <a href="/c/1">第一章</a>
+        <a href="/c/2">第二章</a>
+      </div>
+      ''',
+    );
+    expect(chapters.map((chapter) => chapter.title), ['第一章', '第二章']);
+    expect(chapters.map((chapter) => chapter.itemId), [
+      'https://ex.com/c/1',
+      'https://ex.com/c/2',
+    ]);
+  });
+
+  test('bare text and href read the current anchor', () async {
+    final chapters = await _loadToc(const {
+      'chapterList': 'id.list@tag.a',
+      'chapterName': 'text',
+      'chapterUrl': 'href',
+    }, '<div id="list"><a href="/c/1">第一章</a></div>');
+    expect(chapters.single.title, '第一章');
+    expect(chapters.single.itemId, 'https://ex.com/c/1');
+  });
+
+  test('css, at-css and xpath chapter lists are read', () async {
+    const html = '''
+      <div id="list"><a href="/c/1">第一章</a><a href="/c/2">第二章</a></div>
+    ''';
+    for (final rule in ['@CSS:#list a', '@@#list a', "//div[@id='list']/a"]) {
+      final chapters = await _loadToc({
+        'chapterList': rule,
+        'chapterName': 'text',
+        'chapterUrl': 'href',
+      }, html);
+      expect(chapters.map((chapter) => chapter.title), [
+        '第一章',
+        '第二章',
+      ], reason: rule);
+    }
+  });
+
+  test('a negative chapter range is read from the end', () async {
+    final chapters = await _loadToc(
+      const {
+        'chapterList': 'id.list@tag.a[-1:0]',
+        'chapterName': 'text',
+        'chapterUrl': 'href',
+      },
+      '''
+      <div id="list">
+        <a href="/c/1">第一章</a>
+        <a href="/c/2">第二章</a>
+        <a href="/c/3">第三章</a>
+      </div>
+      ''',
+    );
+    expect(chapters.map((chapter) => chapter.title), ['第三章', '第二章', '第一章']);
+  });
+
+  test('a chapter with a title and no url is still listed', () async {
+    final chapters = await _loadToc(
+      const {
+        'chapterList': 'class.chapter',
+        'chapterName': 'text',
+        'chapterUrl': 'tag.missing@href',
+      },
+      '''
+      <div class="chapter"><a href="/c/1">第一章</a></div>
+      <div class="chapter">第二章</div>
+      ''',
+    );
+    expect(chapters.map((chapter) => chapter.title), ['第一章', '第二章']);
+    expect(chapters.first.itemId, 'https://ex.com/c/1');
+  });
+
   test(
     'slow sources do not block hits from the ones that already returned',
     () async {
@@ -202,6 +285,21 @@ void main() {
     expect(find.text('搜索完成 2/2'), findsOneWidget);
     expect(find.text('书1'), findsOneWidget);
   });
+}
+
+Future<List<Chapter>> _loadToc(Map<String, String> toc, String html) {
+  return loadLegadoChapters(
+    LegadoHit(
+      source: LegadoBookSource({
+        'bookSourceUrl': 'https://ex.com',
+        'bookSourceName': '目录',
+        'ruleToc': toc,
+      }),
+      name: '书',
+      bookUrl: 'https://ex.com/b/1',
+    ),
+    fetch: (_) async => LegadoFetched(html, 'https://ex.com/b/1'),
+  );
 }
 
 LegadoBookSource _htmlSource(int index) => LegadoBookSource({

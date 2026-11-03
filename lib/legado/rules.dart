@@ -73,15 +73,18 @@ String legadoFirst(Object document, String? rule, {required String baseUrl}) {
 
 List<Object> _nodesOf(Object document, String rule) {
   if (rule.isEmpty) return [document];
-  if (_jsonRule(rule, document)) return _jsonNodes(_jsonValues(document, rule));
+  final prepared = _prepareRule(rule);
+  if (_jsonRule(prepared, document)) {
+    return _jsonNodes(_jsonValues(document, prepared));
+  }
   final root = _asElement(document);
   if (root == null) return const [];
-  return _htmlElements(root, _selectorRule(rule));
+  return _htmlElements(root, prepared);
 }
 
 List<String> _textsOf(Object document, String rule, {required String baseUrl}) {
   final parts = rule.split('##');
-  final core = parts.first.trim();
+  final core = _prepareRule(parts.first.trim());
   if (core.isEmpty) {
     final text = document is String ? document : _plain(document);
     return [_applyReplace(text, parts)];
@@ -166,7 +169,7 @@ List<Element> _htmlElements(Element root, String rule) {
 List<dynamic> _htmlValues(Element? root, String rule) {
   if (root == null) return const [];
   final attribute = _attribute(rule);
-  final elements = _htmlElements(root, _selectorRule(rule));
+  final elements = _htmlElements(root, rule);
   if (attribute == null) return elements;
   return elements.map((element) => _readAttribute(element, attribute)).toList();
 }
@@ -174,32 +177,53 @@ List<dynamic> _htmlValues(Element? root, String rule) {
 List<Element> _oneSegment(Element element, String segment) {
   final indexed = _indexed(segment);
   final selected = _select(element, indexed.selector);
-  if (indexed.index == null) return selected;
-  final index = indexed.index!;
-  final resolved = index < 0 ? selected.length + index : index;
-  if (resolved < 0 || resolved >= selected.length) return const [];
-  return [selected[resolved]];
+  final spec = indexed.spec;
+  if (spec == null) return selected;
+  return _pick(selected, spec);
 }
 
+/// 阅读的 `tag.` / `class.` / `id.` 会算上当前元素自己。
+/// `package:html` 的 query 只看子孙，目录节点本身是 `<a>` 时会一个章节都选不中。
 List<Element> _select(Element element, String selector) {
   if (selector.isEmpty || selector == 'children') {
     return element.children;
   }
   if (selector.startsWith('class.')) {
-    return element.getElementsByClassName(selector.substring(6));
+    final name = selector.substring(6);
+    return _include(
+      element,
+      element.classes.contains(name),
+      element.getElementsByClassName(name),
+    );
   }
   if (selector.startsWith('tag.')) {
-    return element.getElementsByTagName(selector.substring(4));
+    final name = selector.substring(4).toLowerCase();
+    return _include(
+      element,
+      element.localName?.toLowerCase() == name,
+      element.getElementsByTagName(name),
+    );
   }
   if (selector.startsWith('id.')) {
-    return element.querySelectorAll('#${selector.substring(3)}');
+    final name = selector.substring(3);
+    return _include(element, element.id == name, _css(element, '#$name'));
   }
   if (selector.startsWith('text.')) {
     final needle = selector.substring(5);
-    return element.getElementsByTagName('*').where((node) {
+    final found = element.getElementsByTagName('*').where((node) {
       return node.text.contains(needle);
     }).toList();
+    return _include(element, element.text.contains(needle), found);
   }
+  return _css(element, selector);
+}
+
+List<Element> _include(Element element, bool self, List<Element> found) {
+  if (!self) return found;
+  return [element, ...found];
+}
+
+List<Element> _css(Element element, String selector) {
   try {
     return element.querySelectorAll(selector);
   } catch (_) {
@@ -207,10 +231,53 @@ List<Element> _select(Element element, String selector) {
   }
 }
 
-({String selector, int? index}) _indexed(String segment) {
-  final match = RegExp(r'^(.*)\.(-?\d+)$').firstMatch(segment);
-  if (match == null) return (selector: segment, index: null);
-  return (selector: match.group(1)!, index: int.parse(match.group(2)!));
+({String selector, String? spec}) _indexed(String segment) {
+  final bracket = RegExp(r'^(.*)\[([^\]]+)\]$').firstMatch(segment);
+  if (bracket != null && bracket.group(1)!.isNotEmpty) {
+    return (selector: bracket.group(1)!, spec: bracket.group(2));
+  }
+  final dotted = RegExp(r'^(.*)\.(-?\d+(?::-?\d+)*)$').firstMatch(segment);
+  if (dotted != null && dotted.group(1)!.isNotEmpty) {
+    return (selector: dotted.group(1)!, spec: dotted.group(2));
+  }
+  return (selector: segment, spec: null);
+}
+
+/// `0` 取一个，`-1:0` 从末章排到首章，`0:10:2` 带步长。
+List<Element> _pick(List<Element> items, String spec) {
+  if (items.isEmpty) return const [];
+  final numbers = [
+    for (final piece in spec.split(':')) int.tryParse(piece.trim()),
+  ];
+  if (numbers.any((value) => value == null)) return items;
+  int at(int raw) => raw < 0 ? items.length + raw : raw;
+  if (numbers.length == 1) {
+    final index = at(numbers[0]!);
+    if (index < 0 || index >= items.length) return const [];
+    return [items[index]];
+  }
+  int clamp(int raw) {
+    final index = at(raw);
+    if (index < 0) return 0;
+    if (index >= items.length) return items.length - 1;
+    return index;
+  }
+
+  final start = clamp(numbers[0]!);
+  final end = clamp(numbers[1]!);
+  var step = numbers.length > 2 ? numbers[2]! : (start <= end ? 1 : -1);
+  if (step == 0) step = start <= end ? 1 : -1;
+  final out = <Element>[];
+  if (step > 0) {
+    for (var i = start; i <= end && i < items.length; i += step) {
+      out.add(items[i]);
+    }
+  } else {
+    for (var i = start; i >= end && i >= 0; i += step) {
+      out.add(items[i]);
+    }
+  }
+  return out;
 }
 
 List<String> _segments(String rule) {
@@ -221,20 +288,21 @@ List<String> _segments(String rule) {
 }
 
 String? _attribute(String rule) {
-  if (!rule.contains('@')) return null;
   final parts = rule.split('@').where((part) => part.isNotEmpty).toList();
-  if (parts.length < 2 || !_isAttribute(parts.last)) return null;
+  if (parts.isEmpty || !_isAttribute(parts.last)) return null;
+  if (parts.length == 1 && !_isBareAttribute(parts.single)) return null;
   return parts.last;
+}
+
+bool _isBareAttribute(String segment) {
+  const named = {'text', 'owntext', 'html', 'textnodes', 'href', 'src', 'all'};
+  return named.contains(segment.toLowerCase());
 }
 
 bool _isAttribute(String segment) {
   const named = {'text', 'owntext', 'html', 'textnodes', 'href', 'src', 'all'};
   if (named.contains(segment.toLowerCase())) return true;
-  return !segment.contains('.') &&
-      !segment.contains(' ') &&
-      !segment.contains('[') &&
-      !segment.contains('#') &&
-      !segment.contains('>');
+  return RegExp(r'^[A-Za-z_:][-A-Za-z0-9_:]*$').hasMatch(segment);
 }
 
 String _readAttribute(Element element, String attribute) {
@@ -302,7 +370,78 @@ String _applyReplace(String text, List<String> parts) {
 
 String _coreRule(String rule) => rule.split('##').first.trim();
 
-String _selectorRule(String rule) => _coreRule(rule);
+/// `@CSS:` 和 `@@` 走选择器；`@XPath:` 或以 `/` 开头的规则按常见写法转成 CSS。
+String _prepareRule(String rule) {
+  var trimmed = rule.trim();
+  if (trimmed.contains('{{')) return trimmed;
+  final lower = trimmed.toLowerCase();
+  if (lower.startsWith('@css:')) {
+    trimmed = trimmed.substring(5).trim();
+  } else if (trimmed.startsWith('@@')) {
+    trimmed = trimmed.substring(2).trim();
+  }
+  final attribute = _trailingAttribute(trimmed);
+  final head = attribute == null
+      ? trimmed
+      : trimmed.substring(0, trimmed.length - attribute.length - 1).trim();
+  final css = _xpathToCss(head);
+  if (css == null) return trimmed;
+  return attribute == null ? css : '$css@$attribute';
+}
+
+String? _trailingAttribute(String rule) {
+  final at = rule.lastIndexOf('@');
+  if (at <= 0) return null;
+  final tail = rule.substring(at + 1);
+  if (!_isAttribute(tail)) return null;
+  return tail;
+}
+
+String? _xpathToCss(String rule) {
+  var text = rule.trim();
+  final lower = text.toLowerCase();
+  if (lower.startsWith('@xpath:')) {
+    text = text.substring(7).trim();
+  } else if (!text.startsWith('/')) {
+    return null;
+  }
+  text = text.replaceAllMapped(
+    RegExp(r"""\[@(class|id)\s*=\s*['"]([^'"]+)['"]\]"""),
+    (match) {
+      final kind = match.group(1)!.toLowerCase();
+      final name = match.group(2)!;
+      if (kind == 'id') return '#$name';
+      return name
+          .split(RegExp(r'\s+'))
+          .where((part) => part.isNotEmpty)
+          .map((part) => '.$part')
+          .join();
+    },
+  );
+  if (text.contains('[') || text.contains('@')) return null;
+  final css = StringBuffer();
+  var index = 0;
+  while (index < text.length) {
+    if (text.startsWith('//', index)) {
+      if (css.isNotEmpty) css.write(' ');
+      index += 2;
+      continue;
+    }
+    if (text[index] == '/') {
+      if (css.isNotEmpty) css.write(' > ');
+      index++;
+      continue;
+    }
+    final next = text.indexOf('/', index);
+    final token =
+        (next < 0 ? text.substring(index) : text.substring(index, next)).trim();
+    if (token.isNotEmpty) css.write(token == '*' ? '*' : token);
+    if (next < 0) break;
+    index = next;
+  }
+  final selector = css.toString().trim();
+  return selector.isEmpty ? null : selector;
+}
 
 bool _jsonRule(String rule, Object document) {
   final core = _coreRule(rule).trim();
