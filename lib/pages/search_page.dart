@@ -17,11 +17,18 @@ import '../widgets/home/home_design.dart';
 import '../widgets/home/home_media_card.dart';
 import '../widgets/home/home_shelf.dart';
 import '../widgets/media_card.dart';
+import '../legado/book_source.dart';
+import '../legado/open_book.dart';
+import '../legado/web_book.dart';
 import '../widgets/search/search_content_toolbar.dart';
 import '../widgets/search/search_discovery.dart';
 import '../widgets/search/search_scope_bar.dart';
+import '../widgets/search/search_source_switch.dart';
 import 'detail_page.dart';
+import 'search_book_source.dart';
 import 'search_shuqi.dart';
+
+part 'search_page_book_source.dart';
 
 typedef SearchPageLoader =
     Future<List<SearchTab>> Function(
@@ -59,6 +66,12 @@ class SearchPage extends StatefulWidget {
   /// 书旗搜索。留空走后端；注入后视为离线，与 [searchLoader] 同一约定。
   final ShuqiSearchLoader? shuqiSearchLoader;
 
+  /// 已导入的阅读书源。留空读本地书源库。
+  final BookSourceCatalogLoader? bookSourceCatalog;
+
+  /// 用给定书源搜索。留空按书源规则请求网络。
+  final BookSourceQuery? bookSourceQuery;
+
   const SearchPage({
     super.key,
     this.initialQuery,
@@ -68,6 +81,8 @@ class SearchPage extends StatefulWidget {
     this.suggestLoader,
     this.hotSearchLoader,
     this.shuqiSearchLoader,
+    this.bookSourceCatalog,
+    this.bookSourceQuery,
     this.initialCategory = SearchCategory.general,
   });
 
@@ -96,14 +111,21 @@ class _SearchPageState extends State<SearchPage> {
   double _minimumScore = 0;
   bool _listView = false;
 
-  /// 搜索来源：false = 番茄（默认），true = 书旗。
-  ///
-  /// 书旗没有番茄那套综合/小说/短剧分类，切到书旗时结果落在第一个 feed 里，
-  /// 分类页签置灰并停止响应点击；退出书旗只能点「番茄」。
-  bool _shuqiSource = false;
+  /// 搜索来源。书旗和书源都没有番茄的分类与评分，结果落在第一个 feed。
+  /// 书旗时左侧分类页签置灰；书源时左侧改成已添加书源的搜索范围。
+  SearchOrigin _origin = SearchOrigin.fanqie;
 
-  /// 进入书旗前停留的番茄分类；点「番茄」时回到这里，而不是重置到综合。
+  bool get _shuqiSource => _origin == SearchOrigin.shuqi;
+  bool get _bookSourceMode => _origin == SearchOrigin.bookSource;
+  bool get _fanqieSource => _origin == SearchOrigin.fanqie;
+
+  /// 进入书旗或书源前停留的番茄分类；点「番茄」时回到这里。
   int _fanqieTab = 0;
+
+  final BookSourceSearchSession _bookSources = BookSourceSearchSession();
+  String _bookSourceStatus = '按已添加的书源搜索';
+
+  void _rebuild(VoidCallback update) => setState(update);
 
   bool _layoutChosen = false;
 
@@ -161,7 +183,9 @@ class _SearchPageState extends State<SearchPage> {
   void initState() {
     super.initState();
     // 首帧就停在该页签：分区入口（短剧/漫剧）进来的搜索不该先闪「综合」。
-    _tabIndex = _categories.indexOf(widget.initialCategory).clamp(0, _categories.length - 1);
+    _tabIndex = _categories
+        .indexOf(widget.initialCategory)
+        .clamp(0, _categories.length - 1);
     _scrollController.addListener(_onScroll);
     _loadHistory();
     unawaited(_loadLayout());
@@ -237,9 +261,9 @@ class _SearchPageState extends State<SearchPage> {
         }
       } catch (_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('评分筛选未保存，本次选择仍有效')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('评分筛选未保存，本次选择仍有效')));
       }
     });
   }
@@ -266,10 +290,10 @@ class _SearchPageState extends State<SearchPage> {
     });
   }
 
-  /// 书旗条目没有上游评分，且评分下拉在书旗模式下禁用；阈值不能过滤整批结果。
+  /// 书旗和书源没有上游评分，阈值不能把整批结果滤空。
   bool _matchesScore(MediaItem item) =>
       _idQuery != null ||
-      _shuqiSource ||
+      !_fanqieSource ||
       _minimumScore == 0 ||
       (item.score != null && item.score! >= _minimumScore);
 
@@ -294,8 +318,8 @@ class _SearchPageState extends State<SearchPage> {
       _showHistory();
       return;
     }
-    // 书旗没有番茄的联想词接口；未提交的文字只用来过滤本地历史。
-    if (_shuqiSource) return;
+    // 书旗和书源没有番茄的联想词接口；未提交的文字只用来过滤本地历史。
+    if (!_fanqieSource) return;
     _suggestDebounce = Timer(
       const Duration(milliseconds: 250),
       () => unawaited(_fetchSuggestions(query, generation)),
@@ -350,8 +374,10 @@ class _SearchPageState extends State<SearchPage> {
       _query = query;
       _draft = query;
       _suggestions = const [];
-      // 书旗 id 是另一套命名空间，按 id 直查不适用。
-      _idQuery = (_shuqiSource || asKeyword) ? null : mediaIdFromSearch(query);
+      // 书旗和书源的 id 都不是番茄作品 id。
+      _idQuery = (!_fanqieSource || asKeyword)
+          ? null
+          : mediaIdFromSearch(query);
       _feeds = [for (final _ in _categories) _SearchFeed()];
     });
     if (_shuqiSource) {
@@ -359,47 +385,65 @@ class _SearchPageState extends State<SearchPage> {
       await _searchShuqi(query, _requestGeneration);
       return;
     }
+    if (_bookSourceMode) {
+      _activeRequest?.cancel();
+      await _searchBookSources(query, _requestGeneration);
+      return;
+    }
     await _loadTab(_tabIndex);
   }
 
-  /// 切换搜索来源。进入书旗时记住当前番茄分类并清掉作品 ID 状态；点回
-  /// 「番茄」恢复那个分类，避免用户被悄悄重置到综合。
-  void _selectSource(bool shuqi) {
-    if (shuqi == _shuqiSource) return;
+  /// 切换搜索来源。离开番茄时记住当前分类；点回「番茄」恢复，而不是重置。
+  void _selectOrigin(SearchOrigin origin) {
+    if (origin == _origin) return;
     setState(() {
-      if (shuqi) _fanqieTab = _tabIndex;
-      _shuqiSource = shuqi;
-      _tabIndex = shuqi ? 0 : _fanqieTab;
-      // 书旗 id 是另一套命名空间，切来源后 ID 提示与 ID 结果都失效。
+      if (_fanqieSource) _fanqieTab = _tabIndex;
+      _origin = origin;
+      _tabIndex = origin == SearchOrigin.fanqie ? _fanqieTab : 0;
       _idQuery = null;
       _suggestions = const [];
       ++_suggestGeneration;
       _feeds = [for (final _ in _categories) _SearchFeed()];
     });
-    // 未提交的联想词请求属于番茄，切来源后不该再回来。
     _suggestDebounce?.cancel();
     _activeRequest?.cancel();
     ++_requestGeneration;
-    if (_query.isEmpty) return;
-    unawaited(
-      shuqi ? _searchShuqi(_query, _requestGeneration) : _loadTab(_tabIndex),
-    );
+    if (_query.isEmpty) {
+      if (origin == SearchOrigin.bookSource) {
+        unawaited(_loadBookSourceCatalog(_requestGeneration));
+      }
+      return;
+    }
+    if (origin == SearchOrigin.shuqi) {
+      unawaited(_searchShuqi(_query, _requestGeneration));
+    } else if (origin == SearchOrigin.bookSource) {
+      unawaited(_searchBookSources(_query, _requestGeneration));
+    } else {
+      unawaited(_loadTab(_tabIndex));
+    }
   }
 
   /// 书旗搜索：单次返回、服务端不支持分页，结果全量落在第一个 feed。
   Future<void> _searchShuqi(String query, int generation) async {
     final feed = _feeds[0];
-    setState(() { feed.loading = true; feed.error = null; });
+    setState(() {
+      feed.loading = true;
+      feed.error = null;
+    });
     try {
       final loader = widget.shuqiSearchLoader ?? ApiClient.instance.shuqiSearch;
       final items = await loadShuqiSearch(loader, query);
       if (!mounted || generation != _requestGeneration) return;
       setState(() {
-        feed.items..clear()..addAll(items);
+        feed.items
+          ..clear()
+          ..addAll(items);
         feed.seen
           ..clear()
           ..addAll(items.map((item) => '${item.kind}:${item.id}'));
-        feed.hasMore = false; feed.initialized = true; feed.loading = false;
+        feed.hasMore = false;
+        feed.initialized = true;
+        feed.loading = false;
       });
     } catch (error) {
       if (!mounted || generation != _requestGeneration) return;
@@ -492,6 +536,11 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Future<void> _loadMore() {
+    if (_bookSourceMode) {
+      return _feeds[0].error != null
+          ? _searchBookSources(_query, _requestGeneration)
+          : Future<void>.value();
+    }
     if (_shuqiSource) {
       return _feeds[0].error != null
           ? _searchShuqi(_query, _requestGeneration)
@@ -542,7 +591,7 @@ class _SearchPageState extends State<SearchPage> {
 
   // Note: 分类来源、游标与请求隔离见 .agents/notes/implemented/bug-fix/2026-09-10-search-categories.md
   Future<void> _loadTab(int index) async {
-    if (_shuqiSource) return;
+    if (_shuqiSource || _bookSourceMode) return;
     if (_idQuery != null) return _loadId(_idQuery!);
     final feed = _feeds[index];
     if (_query.isEmpty || feed.loading || (feed.initialized && !feed.hasMore)) {
@@ -669,7 +718,7 @@ class _SearchPageState extends State<SearchPage> {
             style: TextStyle(fontSize: 14, color: palette.ink),
             decoration: InputDecoration(
               isDense: true,
-              hintText: '搜索名称或作品 ID',
+              hintText: _bookSourceMode ? '搜索书名' : '搜索名称或作品 ID',
               hintStyle: TextStyle(fontSize: 13.5, color: palette.muted),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
@@ -715,11 +764,15 @@ class _SearchPageState extends State<SearchPage> {
       body: Column(
         children: [
           SearchScopeBar(
-            categories: [for (final category in _categories) category.title],
-            selectedIndex: _tabIndex,
-            shuqi: _shuqiSource,
-            onSelectCategory: _selectTab,
-            onSelectSource: _selectSource,
+            categories: _bookSourceMode
+                ? [for (final choice in _bookSources.choices) choice.label]
+                : [for (final category in _categories) category.title],
+            selectedIndex: _bookSourceMode
+                ? _bookSources.selectedIndex
+                : _tabIndex,
+            origin: _origin,
+            onSelectCategory: _bookSourceMode ? _selectBookScope : _selectTab,
+            onSelectSource: _selectOrigin,
           ),
           Expanded(
             child: Align(
@@ -784,16 +837,8 @@ class _SearchPageState extends State<SearchPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _idQuery != null
-                    ? (_feeds.first.items.isEmpty
-                          ? '未找到该 ID 对应的作品'
-                          : '该分类下没有匹配的作品')
-                    : (!_shuqiSource && _minimumScore > 0
-                          ? '已加载结果中暂无达到评分的作品'
-                          : (feed.hasMore ? '当前页暂无匹配结果' : '无结果')),
-              ),
-              if (_idQuery == null && !_shuqiSource && _minimumScore > 0)
+              Text(_emptyResultText(feed)),
+              if (_idQuery == null && _fanqieSource && _minimumScore > 0)
                 TextButton(
                   onPressed: () => setState(() => _minimumScore = 0),
                   child: const Text('清除评分筛选'),
@@ -823,19 +868,20 @@ class _SearchPageState extends State<SearchPage> {
 
   Widget _toolbar(BuildContext context) => SearchContentToolbar(
     shuqi: _shuqiSource,
+    sourceNote: _bookSourceMode ? _bookSourceStatus : null,
     scoreEnabled: _idQuery == null,
     minimumScore: _minimumScore,
     onMinimumScore: _selectMinimumScore,
     listView: _listView,
     onToggleLayout: _toggleLayout,
-    showRatingHint: _idQuery == null && !_shuqiSource && _minimumScore > 0,
+    showRatingHint: _idQuery == null && _fanqieSource && _minimumScore > 0,
   );
 
   /// 空查询时的发现区：搜索历史在前、热搜在后（版式在 [SearchDiscoveryView]）。
   Widget _discoveryView(BuildContext context, {required bool showToolbar}) =>
       SearchDiscoveryView(
         leading: showToolbar ? _toolbar(context) : null,
-        hot: _shuqiSource ? HotSearch.empty : _hot,
+        hot: _fanqieSource ? _hot : HotSearch.empty,
         history: _history,
         historyLoading: _historyLoading,
         filter: normalizeSearchQuery(_ctrl.text).toLowerCase(),
@@ -929,16 +975,7 @@ class _SearchPageState extends State<SearchPage> {
                 // 100-chapter one, so it belongs next to the kind instead of
                 // only on the detail page. Novels carry `word_number`;
                 // dramas/manju carry an episode count in `ep`.
-                [
-                  if (item.author.isNotEmpty) item.author,
-                  kindLabels[item.kind] ?? item.kind,
-                  if (mediaLengthLabel(item).isNotEmpty) mediaLengthLabel(item),
-                  if (item.score != null)
-                    '${item.score!.toStringAsFixed(1)}分'
-                  // 书旗条目没有上游评分，不再逐行补「暂无评分」。
-                  else if (!isShuqiItem(item))
-                    '暂无评分',
-                ].join(' · '),
+                _resultMeta(item),
                 style: TextStyle(color: palette.muted, fontSize: 11.5),
               ),
             ],
@@ -1034,6 +1071,10 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _openItem(MediaItem item) {
+    if (item.source == legadoSourceMark) {
+      unawaited(openLegadoShelfItem(context, item));
+      return;
+    }
     openBookDetail(context, item);
   }
 }

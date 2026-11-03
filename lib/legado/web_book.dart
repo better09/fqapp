@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:html/dom.dart';
@@ -55,6 +56,28 @@ class LegadoSearchBatch {
   const LegadoSearchBatch(this.hits, this.errors);
 }
 
+/// 搜索过程中的进度。命中会随每个书源返回立刻累积，不用等全部结束。
+class LegadoSearchProgress {
+  final List<LegadoHit> hits;
+  final List<String> errors;
+  final int finished;
+  final int total;
+
+  const LegadoSearchProgress({
+    required this.hits,
+    required this.errors,
+    required this.finished,
+    required this.total,
+  });
+
+  bool get done => finished >= total;
+}
+
+/// 同时查询的书源数。阅读默认也是有限并发，而不是一个书源排队等下一个。
+const legadoSearchConcurrency = 8;
+
+const _legadoRequestTimeout = Duration(seconds: 12);
+
 typedef LegadoFetcher = Future<LegadoFetched> Function(LegadoRequest request);
 
 class LegadoFetched {
@@ -63,47 +86,138 @@ class LegadoFetched {
   const LegadoFetched(this.body, this.url);
 }
 
-Future<LegadoFetched> fetchLegado(LegadoRequest request) async {
+Future<LegadoFetched> fetchLegado(LegadoRequest request) {
   final client = http.Client();
-  try {
-    final outgoing = http.Request(request.method, request.url)
-      ..headers.addAll(request.headers);
-    if (request.body != null && request.method != 'GET') {
-      outgoing.body = request.body!;
-    }
-    final response = await client
-        .send(outgoing)
-        .timeout(const Duration(seconds: 20));
-    final bytes = await response.stream.toBytes();
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw LegadoException('请求失败（${response.statusCode}）');
-    }
-    final url = response.request?.url.toString() ?? request.url.toString();
-    return LegadoFetched(utf8.decode(bytes, allowMalformed: true), url);
-  } finally {
+  final done = Completer<LegadoFetched>();
+  final timer = Timer(_legadoRequestTimeout, () {
     client.close();
+    if (!done.isCompleted) done.completeError(LegadoException('请求超时'));
+  });
+  _readLegado(client, request)
+      .then(
+        (value) {
+          if (!done.isCompleted) done.complete(value);
+        },
+        onError: (Object error, StackTrace stack) {
+          if (done.isCompleted) return;
+          done.completeError(
+            error is LegadoException ? error : LegadoException('请求失败'),
+            stack,
+          );
+        },
+      )
+      .whenComplete(() {
+        timer.cancel();
+        client.close();
+      });
+  return done.future;
+}
+
+Future<LegadoFetched> _readLegado(
+  http.Client client,
+  LegadoRequest request,
+) async {
+  final outgoing = http.Request(request.method, request.url)
+    ..headers.addAll(request.headers);
+  if (request.body != null && request.method != 'GET') {
+    outgoing.body = request.body!;
   }
+  final response = await client.send(outgoing);
+  final bytes = await response.stream.toBytes();
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw LegadoException('请求失败（${response.statusCode}）');
+  }
+  final url = response.request?.url.toString() ?? request.url.toString();
+  return LegadoFetched(utf8.decode(bytes, allowMalformed: true), url);
 }
 
 Future<LegadoSearchBatch> searchLegadoSources({
   required List<LegadoBookSource> sources,
   required String keyword,
   LegadoFetcher fetch = fetchLegado,
+  void Function(LegadoSearchProgress progress)? onProgress,
+  bool Function()? isCancelled,
+  int concurrency = legadoSearchConcurrency,
 }) async {
+  final enabled = sources
+      .where((item) => item.enabled && item.type == 0)
+      .toList();
   final hits = <LegadoHit>[];
   final errors = <String>[];
-  for (final source in sources.where(
-    (item) => item.enabled && item.type == 0,
-  )) {
-    try {
-      hits.addAll(await _searchOne(source, keyword, fetch));
-    } on LegadoException catch (error) {
-      errors.add('${source.name}：${error.message}');
-    } catch (error) {
-      errors.add('${source.name}：$error');
-    }
+  var finished = 0;
+  var running = 0;
+  final waiting = <Completer<void>>[];
+
+  void report() {
+    onProgress?.call(
+      LegadoSearchProgress(
+        hits: List.unmodifiable(hits),
+        errors: List.unmodifiable(errors),
+        finished: finished,
+        total: enabled.length,
+      ),
+    );
   }
-  return LegadoSearchBatch(hits, errors);
+
+  report();
+  Future<void> acquire() async {
+    while (running >= concurrency) {
+      final slot = Completer<void>();
+      waiting.add(slot);
+      await slot.future;
+    }
+    running++;
+  }
+
+  void release() {
+    running--;
+    if (waiting.isNotEmpty) waiting.removeAt(0).complete();
+  }
+
+  final tasks = <Future<void>>[];
+  for (final source in enabled) {
+    if (isCancelled?.call() == true) break;
+    await acquire();
+    if (isCancelled?.call() == true) {
+      release();
+      break;
+    }
+    tasks.add(
+      _searchSource(source, keyword, fetch)
+          .then(
+            (found) {
+              if (isCancelled?.call() == true) return;
+              hits.addAll(found);
+            },
+            onError: (Object error, StackTrace _) {
+              if (isCancelled?.call() == true) return;
+              final message = error is LegadoException
+                  ? error.message
+                  : '$error';
+              errors.add('${source.name}：$message');
+            },
+          )
+          .whenComplete(() {
+            release();
+            if (isCancelled?.call() == true) return;
+            finished++;
+            report();
+          }),
+    );
+  }
+  if (isCancelled?.call() != true) await Future.wait(tasks);
+  return LegadoSearchBatch(List.of(hits), List.of(errors));
+}
+
+Future<List<LegadoHit>> _searchSource(
+  LegadoBookSource source,
+  String keyword,
+  LegadoFetcher fetch,
+) {
+  return _searchOne(source, keyword, fetch).timeout(
+    _legadoRequestTimeout,
+    onTimeout: () => throw LegadoException('请求超时'),
+  );
 }
 
 Future<List<LegadoHit>> _searchOne(

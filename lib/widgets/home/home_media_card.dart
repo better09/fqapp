@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_lucide/flutter_lucide.dart';
 
+import '../../legado/book_source.dart';
 import '../../models/media_item.dart';
 import '../../services/poster_cache.dart';
 import '../cover_tag_chip.dart';
@@ -269,6 +270,13 @@ class HomeMediaCard extends StatelessWidget {
 
   /// 作者 · 第一条推荐理由 · 评分。都是 11sp 的一行灰字，不抢书名。
   static String _metaText(MediaItem item, {bool showLength = false}) {
+    if (item.source == legadoSourceMark) {
+      return [
+        if (item.author.isNotEmpty) item.author,
+        if (item.badge.isNotEmpty) item.badge,
+        if (item.ep.isNotEmpty) item.ep,
+      ].join(' · ');
+    }
     final score = item.score;
     final length = showLength ? mediaLengthLabel(item) : '';
     return [

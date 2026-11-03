@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fqapp/pages/source_search_page.dart';
 import 'package:fqapp/legado/analyze_url.dart';
 import 'package:fqapp/legado/book_source.dart';
 import 'package:fqapp/legado/rules.dart';
@@ -131,4 +136,81 @@ void main() {
     );
     expect(failed.errors.single, contains('JavaScript'));
   });
+
+  test(
+    'slow sources do not block hits from the ones that already returned',
+    () async {
+      final slow = Completer<void>();
+      var running = 0;
+      var peak = 0;
+      final progress = <int>[];
+      final pending = searchLegadoSources(
+        sources: [for (var i = 0; i < 4; i++) _htmlSource(i)],
+        keyword: '雪中',
+        concurrency: 2,
+        onProgress: (update) => progress.add(update.hits.length),
+        fetch: (request) async {
+          running++;
+          peak = math.max(peak, running);
+          final index = int.parse(request.url.pathSegments.first);
+          if (index == 3) await slow.future;
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          running--;
+          return LegadoFetched(
+            '<div class="item"><a href="/b/$index">书$index</a></div>',
+            request.url.toString(),
+          );
+        },
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(progress.last, 3);
+      expect(peak, 2);
+      slow.complete();
+      final batch = await pending;
+      expect(batch.hits, hasLength(4));
+      expect(batch.errors, isEmpty);
+    },
+  );
+
+  testWidgets('search page lists a finished source before the slow one', (
+    tester,
+  ) async {
+    final slow = Completer<void>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SourceSearchPage(
+          keyword: '雪中',
+          sources: [_htmlSource(0), _htmlSource(1)],
+          fetch: (request) async {
+            final index = int.parse(request.url.pathSegments.first);
+            if (index == 1) await slow.future;
+            return LegadoFetched(
+              '<div class="item"><a href="/b/$index">书$index</a></div>',
+              request.url.toString(),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('书0'), findsOneWidget);
+    expect(find.text('正在搜索 1/2'), findsOneWidget);
+    expect(find.text('书1'), findsNothing);
+    slow.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('搜索完成 2/2'), findsOneWidget);
+    expect(find.text('书1'), findsOneWidget);
+  });
 }
+
+LegadoBookSource _htmlSource(int index) => LegadoBookSource({
+  'bookSourceUrl': 'https://ex.com/$index',
+  'bookSourceName': '源$index',
+  'searchUrl': 'https://ex.com/$index/s?q={{key}}',
+  'ruleSearch': {
+    'bookList': 'class.item',
+    'name': 'tag.a@text',
+    'bookUrl': 'tag.a@href',
+  },
+});

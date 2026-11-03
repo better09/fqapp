@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../home/home_design.dart';
 
-/// 搜索来源的「番茄 | 书旗」两段切换。
+/// 书城搜索的来源。书源对应阅读里按已导入书源搜索的范围。
+enum SearchOrigin { fanqie, shuqi, bookSource }
+
+/// 搜索来源的「番茄 | 书旗 | 书源」三段切换。
 ///
 /// 外框 32 高、内边距 2、圆角 16、[HomePalette.soft] 底；每段 28 高、
 /// 水平内边距 11、13sp。选中段浅色用 [HomePalette.surface]，深色用
@@ -15,16 +18,16 @@ class SearchSourceSwitch extends StatelessWidget {
   static const double trackHeight = 32;
   static const double segmentHeight = 28;
 
-  final bool shuqi;
+  final SearchOrigin origin;
 
   /// 点击区高度；传入范围条高度让两段都能在整条上点中。
   final double tapHeight;
 
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<SearchOrigin> onChanged;
 
   const SearchSourceSwitch({
     super.key,
-    required this.shuqi,
+    required this.origin,
     required this.onChanged,
     this.tapHeight = defaultTapHeight,
   });
@@ -65,18 +68,27 @@ class SearchSourceSwitch extends StatelessWidget {
                   palette,
                   key: const Key('search-source-fanqie'),
                   label: '番茄',
-                  selected: !shuqi,
+                  selected: origin == SearchOrigin.fanqie,
                   segmentHeight: segmentHeight,
-                  onTap: () => onChanged(false),
+                  onTap: () => onChanged(SearchOrigin.fanqie),
                 ),
                 _segment(
                   context,
                   palette,
                   key: const Key('search-shuqi-source'),
                   label: '书旗',
-                  selected: shuqi,
+                  selected: origin == SearchOrigin.shuqi,
                   segmentHeight: segmentHeight,
-                  onTap: () => onChanged(true),
+                  onTap: () => onChanged(SearchOrigin.shuqi),
+                ),
+                _segment(
+                  context,
+                  palette,
+                  key: const Key('search-source-book'),
+                  label: '书源',
+                  selected: origin == SearchOrigin.bookSource,
+                  segmentHeight: segmentHeight,
+                  onTap: () => onChanged(SearchOrigin.bookSource),
                 ),
               ],
             ),

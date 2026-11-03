@@ -6,26 +6,26 @@ import '../home/home_design.dart';
 import '../home/home_shelf.dart';
 import 'search_source_switch.dart';
 
-/// 搜索页的范围条：分类页签 + 右缘渐隐 + 来源切换。
+/// 搜索页的范围条：分类或书源范围 + 右缘渐隐 + 来源切换。
 ///
-/// 这是固定顶栏的第二层（第一层是 AppBar 里的搜索框）。分类页签沿用原来的
+/// 这是固定顶栏的第二层（第一层是 AppBar 里的搜索框）。左侧页签沿用原来的
 /// [ChoiceChip] 样式，横向滚动；右缘 24dp 渐隐后接一根 1×20 的竖线，再往右
-/// 是固定的「番茄 | 书旗」两段切换。选中书旗时分类页签降到 0.4 透明度并停止
-/// 响应点击，退出书旗只能点「番茄」。
+/// 是固定的「番茄 | 书旗 | 书源」切换。选中书旗时左侧页签降到 0.4 透明度并停止
+/// 响应点击。选中书源时，左侧改成阅读那种搜索范围：全部、分组、单条书源。
 class SearchScopeBar extends StatelessWidget {
   static const double fadeWidth = 24;
 
   final List<String> categories;
   final int selectedIndex;
-  final bool shuqi;
+  final SearchOrigin origin;
   final ValueChanged<int> onSelectCategory;
-  final ValueChanged<bool> onSelectSource;
+  final ValueChanged<SearchOrigin> onSelectSource;
 
   const SearchScopeBar({
     super.key,
     required this.categories,
     required this.selectedIndex,
-    required this.shuqi,
+    required this.origin,
     required this.onSelectCategory,
     required this.onSelectSource,
   });
@@ -50,7 +50,7 @@ class SearchScopeBar extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(left: 12, right: homeGutter),
             child: SearchSourceSwitch(
-              shuqi: shuqi,
+              origin: origin,
               tapHeight: height,
               onChanged: onSelectSource,
             ),
@@ -76,10 +76,11 @@ class SearchScopeBar extends StatelessWidget {
           ),
       ],
     );
+    final locked = origin == SearchOrigin.shuqi;
     return IgnorePointer(
-      ignoring: shuqi,
+      ignoring: locked,
       child: Opacity(
-        opacity: shuqi ? 0.4 : 1,
+        opacity: locked ? 0.4 : 1,
         child: ShaderMask(
           blendMode: BlendMode.dstIn,
           shaderCallback: (bounds) {
@@ -102,7 +103,7 @@ class SearchScopeBar extends StatelessWidget {
 
   Widget _chip(HomePalette palette, int index) {
     final category = categories[index];
-    final isSelected = !shuqi && index == selectedIndex;
+    final isSelected = origin != SearchOrigin.shuqi && index == selectedIndex;
     return ChoiceChip(
       label: Text(category),
       selected: isSelected,

@@ -12,6 +12,9 @@ class SearchContentToolbar extends StatelessWidget {
   static const double height = 44;
 
   final bool shuqi;
+
+  /// 书源等没有评分的来源用这句话替换评分下拉。
+  final String? sourceNote;
   final bool scoreEnabled;
   final double minimumScore;
   final ValueChanged<double> onMinimumScore;
@@ -24,6 +27,7 @@ class SearchContentToolbar extends StatelessWidget {
   const SearchContentToolbar({
     super.key,
     required this.shuqi,
+    this.sourceNote,
     required this.scoreEnabled,
     required this.minimumScore,
     required this.onMinimumScore,
@@ -47,9 +51,9 @@ class SearchContentToolbar extends StatelessWidget {
             height: height,
             child: Row(
               children: [
-                if (shuqi)
+                if (shuqi || sourceNote != null)
                   Text(
-                    '书旗来源暂不提供评分',
+                    shuqi ? '书旗来源暂不提供评分' : sourceNote!,
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.2,
