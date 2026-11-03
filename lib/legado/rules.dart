@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 
+import 'visible_text.dart';
+
 /// 规则里出现阅读的 JavaScript，当前引擎不会执行。
 bool legadoRuleUsesJs(String? rule) {
   if (rule == null || rule.isEmpty) return false;
@@ -307,23 +309,14 @@ bool _isAttribute(String segment) {
 
 String _readAttribute(Element element, String attribute) {
   switch (attribute.toLowerCase()) {
-    case 'text':
-    case 'all':
-      return element.text.trim();
-    case 'owntext':
-      return element.nodes
-          .whereType<Text>()
-          .map((node) => node.text.trim())
-          .where((text) => text.isNotEmpty)
-          .join('\n');
     case 'html':
       return element.innerHtml;
+    case 'owntext':
+      return legadoDirectText(element);
+    case 'text':
+    case 'all':
     case 'textnodes':
-      return element.nodes
-          .whereType<Text>()
-          .map((node) => node.text.trim())
-          .where((text) => text.isNotEmpty)
-          .join('\n');
+      return legadoVisibleText(element);
     default:
       return element.attributes[attribute] ?? '';
   }

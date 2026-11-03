@@ -8,6 +8,7 @@ import '../models/media_item.dart';
 import 'analyze_url.dart';
 import 'book_source.dart';
 import 'rules.dart';
+import 'visible_text.dart';
 
 class LegadoException implements Exception {
   final String message;
@@ -323,22 +324,46 @@ List<Chapter> _readChapterPage(
     final name = legadoFirst(node, source.toc.chapterName, baseUrl: pageUrl);
     if (name.isEmpty) continue;
     var url = legadoFirst(node, source.toc.chapterUrl, baseUrl: pageUrl);
-    if (url.isEmpty) url = _chapterFallbackUrl(node, pageUrl, chapters.length);
-    if (!seen.add(url)) continue;
+    if (!_usableChapterUrl(url)) {
+      url = _chapterFallbackUrl(node, pageUrl, chapters.length);
+    }
+    if (url.isEmpty || !seen.add(url)) continue;
     chapters.add(Chapter(itemId: url, title: name, volumeName: ''));
   }
   return chapters;
 }
 
-/// 规则没写出链接时，用元素或内部锚点的 href；再没有就用页面地址加序号。
+bool _usableChapterUrl(String url) {
+  final lower = url.trim().toLowerCase();
+  return lower.isNotEmpty &&
+      !lower.startsWith('javascript:') &&
+      !lower.startsWith('#');
+}
+
+/// 规则没给出可用链接时，从 href、data-href 或 onclick 里找章节地址。
 String _chapterFallbackUrl(Object node, String pageUrl, int index) {
   if (node is Element) {
-    final href =
-        node.attributes['href'] ?? node.querySelector('a')?.attributes['href'];
-    final trimmed = href?.trim() ?? '';
-    if (trimmed.isNotEmpty) return resolveAgainst(pageUrl, trimmed);
+    final found = _chapterLink(node);
+    if (found.isNotEmpty) return resolveAgainst(pageUrl, found);
   }
   return '$pageUrl#chapter-$index';
+}
+
+String _chapterLink(Element element) {
+  final nodes = [element, ...element.querySelectorAll('a')];
+  for (final node in nodes) {
+    for (final key in ['href', 'data-href', 'data-url', 'data-link']) {
+      final value = node.attributes[key]?.trim() ?? '';
+      if (_usableChapterUrl(value)) return value;
+    }
+    final onclick = node.attributes['onclick'] ?? '';
+    final match = RegExp(
+      r'''['"]((?:https?:)?/[^'"]+|[^'"]+\.s?html[^'"]*)['"]''',
+    ).firstMatch(onclick);
+    final target = match?.group(1)?.trim() ?? '';
+    if (_usableChapterUrl(target)) return target;
+  }
+  return '';
 }
 
 bool _isVolume(Object node, String? rule, String pageUrl) {
@@ -388,17 +413,20 @@ Future<String> loadLegadoContent(
 }
 
 String _plainContent(String raw) {
-  if (!raw.contains('<')) return raw.trim();
-  final withBreaks = raw
-      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
-      .replaceAll(RegExp(r'</p>', caseSensitive: false), '\n');
-  final document = parseLegadoDocument(withBreaks);
-  final plain = document is Element ? document.text : raw;
-  return plain.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+  final trimmed = raw.trim();
+  if (!trimmed.contains('<')) return trimmed;
+  final document = parseLegadoDocument(trimmed);
+  if (document is! Element) return trimmed;
+  return legadoVisibleText(document);
 }
 
 LegadoRequest _get(String url, LegadoBookSource source) {
-  return analyzeLegadoUrl(url, base: source.url, headers: source.headers);
+  final headers = Map<String, String>.from(source.headers);
+  final hasReferer = headers.keys.any((key) => key.toLowerCase() == 'referer');
+  if (!hasReferer && source.url.startsWith('http')) {
+    headers['Referer'] = source.url;
+  }
+  return analyzeLegadoUrl(url, base: source.url, headers: headers);
 }
 
 void _rejectJs(List<String?> rules) {

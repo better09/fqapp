@@ -220,6 +220,48 @@ void main() {
     expect(chapters.first.itemId, 'https://ex.com/c/1');
   });
 
+  test('javascript chapter links use the address in onclick', () async {
+    final chapters = await _loadToc(
+      const {
+        'chapterList': 'id.list@tag.a',
+        'chapterName': 'text',
+        'chapterUrl': 'href',
+      },
+      '''
+      <div id="list">
+        <a href="javascript:;" onclick="location.href='/c/1.html'">第一章</a>
+      </div>
+      ''',
+    );
+    expect(chapters.single.itemId, 'https://ex.com/c/1.html');
+  });
+
+  test('paragraphs under the chapter title are the body', () async {
+    final source = LegadoBookSource({
+      'bookSourceUrl': 'https://ex.com',
+      'bookSourceName': '正文',
+      'ruleContent': {'content': 'id.content@textNodes'},
+    });
+    LegadoRequest? seen;
+    final text = await loadLegadoContent(
+      source,
+      'https://ex.com/c/1',
+      fetch: (request) async {
+        seen = request;
+        return const LegadoFetched('''
+          <div id="content">
+            第一章 开端
+            <p>正文第一段，这里才是小说。</p>
+            <p>正文第二段。</p>
+          </div>
+          ''', 'https://ex.com/c/1');
+      },
+    );
+    expect(text, contains('正文第一段，这里才是小说。'));
+    expect(text, contains('正文第二段。'));
+    expect(seen?.headers['Referer'], 'https://ex.com');
+  });
+
   test(
     'slow sources do not block hits from the ones that already returned',
     () async {
