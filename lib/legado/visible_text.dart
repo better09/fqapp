@@ -19,6 +19,8 @@ const _blockTags = {
   'h6',
 };
 
+const _hiddenTags = {'script', 'style', 'noscript'};
+
 /// 当前节点上的文字，不含子元素。
 String legadoDirectText(Element element) => element.nodes
     .whereType<Text>()
@@ -26,16 +28,8 @@ String legadoDirectText(Element element) => element.nodes
     .where((text) => text.isNotEmpty)
     .join('\n');
 
-/// 正文。`<br>` 和段落会换行，`<script>` / `<style>` 丢掉。
-///
-/// 直接文字已经是一整章时（用 `<br>` 分段的页面）不再把子元素里的目录链接拼进来。
-/// 直接文字只是章节标题、正文在 `<p>` 里时，要带上这些段落，否则阅读器会当成没有正文。
-String legadoVisibleText(Element element) {
-  final direct = legadoDirectText(element);
-  final blocks = _blockText(element);
-  if (direct.length >= 80) return direct;
-  return blocks.length >= direct.length ? blocks : direct;
-}
+/// 正文。段落和 `<br>` 换行，脚本和整块目录链接不计入。
+String legadoVisibleText(Element element) => _blockText(element);
 
 String _blockText(Node node) {
   final buffer = StringBuffer();
@@ -47,7 +41,7 @@ String _blockText(Node node) {
     lineStart = true;
   }
 
-  void walk(Node current) {
+  void walk(Node current, {required bool root}) {
     if (current is Text) {
       final text = current.data.replaceAll('\u00A0', ' ');
       if (text.trim().isEmpty) return;
@@ -57,15 +51,28 @@ String _blockText(Node node) {
     }
     if (current is! Element) return;
     final tag = current.localName?.toLowerCase() ?? '';
-    if (tag == 'script' || tag == 'style') return;
+    if (_hiddenTags.contains(tag)) return;
+    if (!root && _isLinkList(current)) return;
     final block = _blockTags.contains(tag);
     if (block) breakLine();
     for (final child in current.nodes) {
-      walk(child);
+      walk(child, root: false);
     }
     if (block) breakLine();
   }
 
-  walk(node);
+  walk(node, root: true);
   return buffer.toString().trim();
+}
+
+/// 一排章节链接不是正文。至少四个链接，并且文字几乎都在链接里。
+bool _isLinkList(Element element) {
+  final anchors = element.getElementsByTagName('a');
+  if (anchors.length < 4) return false;
+  final linkChars = anchors.fold<int>(
+    0,
+    (sum, anchor) => sum + anchor.text.trim().length,
+  );
+  final total = element.text.trim().length;
+  return total > 0 && linkChars * 5 >= total * 4;
 }

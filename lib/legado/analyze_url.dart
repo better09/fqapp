@@ -6,12 +6,14 @@ class LegadoRequest {
   final String method;
   final Map<String, String> headers;
   final String? body;
+  final String? charset;
 
   const LegadoRequest({
     required this.url,
     required this.method,
     required this.headers,
     this.body,
+    this.charset,
   });
 }
 
@@ -37,11 +39,23 @@ LegadoRequest analyzeLegadoUrl(
     ..._stringMap(option?['headers']),
   };
   final body = _fillBody(option?['body'], key: key, page: page);
+  final charset = _optionalText(option?['charset']);
   if (body != null &&
       !merged.keys.any((name) => name.toLowerCase() == 'content-type')) {
     merged['Content-Type'] = 'application/x-www-form-urlencoded';
   }
-  return LegadoRequest(url: url, method: method, headers: merged, body: body);
+  return LegadoRequest(
+    url: url,
+    method: method,
+    headers: merged,
+    body: body,
+    charset: charset,
+  );
+}
+
+String? _optionalText(Object? value) {
+  final text = value?.toString().trim() ?? '';
+  return text.isEmpty ? null : text;
 }
 
 ({String url, Map<String, dynamic>? option}) _splitOptions(String rule) {

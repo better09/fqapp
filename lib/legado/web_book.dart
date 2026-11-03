@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:html/dom.dart';
 import 'package:http/http.dart' as http;
@@ -7,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/media_item.dart';
 import 'analyze_url.dart';
 import 'book_source.dart';
+import 'charset.dart';
 import 'rules.dart';
 import 'visible_text.dart';
 
@@ -123,13 +123,56 @@ Future<LegadoFetched> _readLegado(
   if (request.body != null && request.method != 'GET') {
     outgoing.body = request.body!;
   }
+  _attachCookie(outgoing);
   final response = await client.send(outgoing);
   final bytes = await response.stream.toBytes();
+  _storeCookies(request.url, response.headers);
   if (response.statusCode < 200 || response.statusCode >= 300) {
     throw LegadoException('请求失败（${response.statusCode}）');
   }
   final url = response.request?.url.toString() ?? request.url.toString();
-  return LegadoFetched(utf8.decode(bytes, allowMalformed: true), url);
+  return LegadoFetched(
+    decodeLegadoBytes(
+      bytes,
+      charset: request.charset,
+      contentType: response.headers['content-type'],
+    ),
+    url,
+  );
+}
+
+final _cookies = <String, Map<String, String>>{};
+
+void _attachCookie(http.Request outgoing) {
+  if (outgoing.headers.keys.any((key) => key.toLowerCase() == 'cookie')) {
+    return;
+  }
+  final jar = _cookies[outgoing.url.host];
+  if (jar == null || jar.isEmpty) return;
+  outgoing.headers['Cookie'] = [
+    for (final entry in jar.entries) '${entry.key}=${entry.value}',
+  ].join('; ');
+}
+
+void _storeCookies(Uri url, Map<String, String> headers) {
+  final header = headers.entries
+      .where((entry) => entry.key.toLowerCase() == 'set-cookie')
+      .map((entry) => entry.value)
+      .join(',');
+  if (header.isEmpty) return;
+  final jar = _cookies.putIfAbsent(url.host, () => {});
+  for (final part in header.split(RegExp(r',(?=\s*[^;,=\s]+=)'))) {
+    final pair = part.split(';').first.trim();
+    final eq = pair.indexOf('=');
+    if (eq <= 0) continue;
+    final name = pair.substring(0, eq).trim();
+    final value = pair.substring(eq + 1).trim();
+    if (value.isEmpty) {
+      jar.remove(name);
+    } else {
+      jar[name] = value;
+    }
+  }
 }
 
 Future<LegadoSearchBatch> searchLegadoSources({
@@ -392,6 +435,7 @@ Future<String> loadLegadoContent(
         document,
         source.content.content,
         baseUrl: page.url,
+        raw: page.body,
       ).join('\n'),
     );
     final next = legadoFirst(

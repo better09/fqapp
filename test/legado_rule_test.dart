@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fqapp/pages/source_search_page.dart';
 import 'package:fqapp/models/media_item.dart';
+import 'package:enough_convert/enough_convert.dart';
 import 'package:fqapp/legado/analyze_url.dart';
 import 'package:fqapp/legado/book_source.dart';
+import 'package:fqapp/legado/charset.dart';
 import 'package:fqapp/legado/rules.dart';
 import 'package:fqapp/legado/web_book.dart';
 
@@ -262,6 +264,72 @@ void main() {
     expect(seen?.headers['Referer'], 'https://ex.com');
   });
 
+  test('a leading paragraph can be excluded from the body', () async {
+    final text = await _content('id.content@tag.p!0@text', '''
+      <div id="content">
+        <p>第一章 标题</p>
+        <p>真正的正文。</p>
+      </div>
+      ''');
+    expect(text, contains('真正的正文。'));
+    expect(text, isNot(contains('标题')));
+  });
+
+  test('a regex extracts the chapter and ignores the catalog', () async {
+    final text = await _content(
+      r'##<div id="content">([\s\S]*?)</div>##$1##',
+      '''
+      <div id="side">目录一章</div>
+      <div id="content"><p>正文在这里。</p></div>
+      ''',
+    );
+    expect(text, contains('正文在这里。'));
+    expect(text, isNot(contains('目录一章')));
+  });
+
+  test('javascript escaped chapter html is unescaped', () async {
+    final text = await _content(
+      r'''##content\s*=\s*"(.*?)"##$1##''',
+      r'''
+      <script>var content = "\u003cp\u003e转义后的正文\u003c/p\u003e";</script>
+      ''',
+    );
+    expect(text, contains('转义后的正文'));
+  });
+
+  test('a chapter link list is not treated as the body', () async {
+    final text = await _content('id.content@text', '''
+      <div id="content">
+        <p>这是小说正文段落。</p>
+        <div class="list">
+          <a>第一章</a><a>第二章</a><a>第三章</a><a>第四章</a><a>第五章</a>
+        </div>
+      </div>
+      ''');
+    expect(text, contains('这是小说正文段落。'));
+    expect(text, isNot(contains('第五章')));
+  });
+
+  test('xpath text nodes are the body', () async {
+    final text = await _content(
+      "//div[@id='content']/text()",
+      '<div id="content">直接写在节点上的正文</div>',
+    );
+    expect(text, contains('直接写在节点上的正文'));
+  });
+
+  test('gbk pages and declared charset decode as chinese', () {
+    final coded = gbk.encode('正文第一段');
+    expect(decodeLegadoBytes(coded), contains('正文第一段'));
+    final page = gbk.encode('<meta charset="gb2312"><div>网页正文</div>');
+    expect(decodeLegadoBytes(page), contains('网页正文'));
+    final request = analyzeLegadoUrl(
+      'https://ex.com/s,{"charset":"gbk"}',
+      base: 'https://ex.com',
+    );
+    expect(request.charset, 'gbk');
+  });
+
   test(
     'slow sources do not block hits from the ones that already returned',
     () async {
@@ -327,6 +395,18 @@ void main() {
     expect(find.text('搜索完成 2/2'), findsOneWidget);
     expect(find.text('书1'), findsOneWidget);
   });
+}
+
+Future<String> _content(String rule, String html) {
+  return loadLegadoContent(
+    LegadoBookSource({
+      'bookSourceUrl': 'https://ex.com',
+      'bookSourceName': '正文',
+      'ruleContent': {'content': rule},
+    }),
+    'https://ex.com/c/1',
+    fetch: (_) async => LegadoFetched(html, 'https://ex.com/c/1'),
+  );
 }
 
 Future<List<Chapter>> _loadToc(Map<String, String> toc, String html) {

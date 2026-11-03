@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 
+import 'replace_rule.dart';
 import 'visible_text.dart';
+import 'xpath_css.dart';
 
 /// 规则里出现阅读的 JavaScript，当前引擎不会执行。
 bool legadoRuleUsesJs(String? rule) {
@@ -45,12 +47,18 @@ List<String> legadoTexts(
   Object document,
   String? rule, {
   required String baseUrl,
+  String? raw,
 }) {
   if (rule == null || rule.trim().isEmpty) return const [];
   final alternatives = _splitOp(rule, '||');
   if (alternatives.length > 1) {
     for (final alternative in alternatives) {
-      final texts = legadoTexts(document, alternative, baseUrl: baseUrl);
+      final texts = legadoTexts(
+        document,
+        alternative,
+        baseUrl: baseUrl,
+        raw: raw,
+      );
       if (texts.any((text) => text.trim().isNotEmpty)) return texts;
     }
     return const [];
@@ -59,11 +67,11 @@ List<String> legadoTexts(
   if (pieces.length > 1) {
     final texts = <String>[];
     for (final piece in pieces) {
-      texts.addAll(legadoTexts(document, piece, baseUrl: baseUrl));
+      texts.addAll(legadoTexts(document, piece, baseUrl: baseUrl, raw: raw));
     }
     return texts;
   }
-  return _textsOf(document, rule, baseUrl: baseUrl);
+  return _textsOf(document, rule, baseUrl: baseUrl, raw: raw);
 }
 
 String legadoFirst(Object document, String? rule, {required String baseUrl}) {
@@ -84,12 +92,17 @@ List<Object> _nodesOf(Object document, String rule) {
   return _htmlElements(root, prepared);
 }
 
-List<String> _textsOf(Object document, String rule, {required String baseUrl}) {
+List<String> _textsOf(
+  Object document,
+  String rule, {
+  required String baseUrl,
+  String? raw,
+}) {
   final parts = rule.split('##');
   final core = _prepareRule(parts.first.trim());
   if (core.isEmpty) {
-    final text = document is String ? document : _plain(document);
-    return [_applyReplace(text, parts)];
+    final text = raw ?? _markup(document);
+    return [legadoReplace(text, parts)];
   }
   final values = _jsonRule(core, document)
       ? _jsonValues(document, core)
@@ -98,7 +111,7 @@ List<String> _textsOf(Object document, String rule, {required String baseUrl}) {
   for (final value in values) {
     final text = _asText(value, baseUrl: baseUrl, attribute: _attribute(core));
     if (text.isEmpty) continue;
-    texts.add(_applyReplace(text, parts));
+    texts.add(legadoReplace(text, parts));
   }
   return texts;
 }
@@ -181,7 +194,25 @@ List<Element> _oneSegment(Element element, String segment) {
   final selected = _select(element, indexed.selector);
   final spec = indexed.spec;
   if (spec == null) return selected;
+  if (indexed.exclude) return _exclude(selected, spec);
   return _pick(selected, spec);
+}
+
+/// `tag.p!0` 或 `tag.p!0:2` 去掉这些下标，剩下的段落才是正文。
+List<Element> _exclude(List<Element> items, String spec) {
+  final drop = <int>{};
+  for (final piece in spec.split(':')) {
+    final raw = int.tryParse(piece.trim());
+    if (raw == null) continue;
+    final index = raw < 0 ? items.length + raw : raw;
+    if (index >= 0 && index < items.length) drop.add(index);
+  }
+  if (drop.isEmpty) return items;
+  final kept = <Element>[];
+  for (var i = 0; i < items.length; i++) {
+    if (!drop.contains(i)) kept.add(items[i]);
+  }
+  return kept;
 }
 
 /// 阅读的 `tag.` / `class.` / `id.` 会算上当前元素自己。
@@ -233,16 +264,24 @@ List<Element> _css(Element element, String selector) {
   }
 }
 
-({String selector, String? spec}) _indexed(String segment) {
+({String selector, String? spec, bool exclude}) _indexed(String segment) {
   final bracket = RegExp(r'^(.*)\[([^\]]+)\]$').firstMatch(segment);
   if (bracket != null && bracket.group(1)!.isNotEmpty) {
-    return (selector: bracket.group(1)!, spec: bracket.group(2));
+    return (
+      selector: bracket.group(1)!,
+      spec: bracket.group(2),
+      exclude: false,
+    );
+  }
+  final bang = RegExp(r'^(.*)!([-\d:]+)$').firstMatch(segment);
+  if (bang != null && bang.group(1)!.isNotEmpty) {
+    return (selector: bang.group(1)!, spec: bang.group(2), exclude: true);
   }
   final dotted = RegExp(r'^(.*)\.(-?\d+(?::-?\d+)*)$').firstMatch(segment);
   if (dotted != null && dotted.group(1)!.isNotEmpty) {
-    return (selector: dotted.group(1)!, spec: dotted.group(2));
+    return (selector: dotted.group(1)!, spec: dotted.group(2), exclude: false);
   }
-  return (selector: segment, spec: null);
+  return (selector: segment, spec: null, exclude: false);
 }
 
 /// `0` 取一个，`-1:0` 从末章排到首章，`0:10:2` 带步长。
@@ -351,16 +390,6 @@ String resolveAgainst(String baseUrl, String target) {
   return base.resolve(target).toString();
 }
 
-String _applyReplace(String text, List<String> parts) {
-  var result = text;
-  for (var i = 1; i < parts.length; i += 2) {
-    final pattern = parts[i];
-    final replacement = i + 1 < parts.length ? parts[i + 1] : '';
-    result = result.replaceAll(RegExp(pattern), replacement);
-  }
-  return result.trim();
-}
-
 String _coreRule(String rule) => rule.split('##').first.trim();
 
 /// `@CSS:` 和 `@@` 走选择器；`@XPath:` 或以 `/` 开头的规则按常见写法转成 CSS。
@@ -377,7 +406,7 @@ String _prepareRule(String rule) {
   final head = attribute == null
       ? trimmed
       : trimmed.substring(0, trimmed.length - attribute.length - 1).trim();
-  final css = _xpathToCss(head);
+  final css = xpathToCss(head);
   if (css == null) return trimmed;
   return attribute == null ? css : '$css@$attribute';
 }
@@ -388,52 +417,6 @@ String? _trailingAttribute(String rule) {
   final tail = rule.substring(at + 1);
   if (!_isAttribute(tail)) return null;
   return tail;
-}
-
-String? _xpathToCss(String rule) {
-  var text = rule.trim();
-  final lower = text.toLowerCase();
-  if (lower.startsWith('@xpath:')) {
-    text = text.substring(7).trim();
-  } else if (!text.startsWith('/')) {
-    return null;
-  }
-  text = text.replaceAllMapped(
-    RegExp(r"""\[@(class|id)\s*=\s*['"]([^'"]+)['"]\]"""),
-    (match) {
-      final kind = match.group(1)!.toLowerCase();
-      final name = match.group(2)!;
-      if (kind == 'id') return '#$name';
-      return name
-          .split(RegExp(r'\s+'))
-          .where((part) => part.isNotEmpty)
-          .map((part) => '.$part')
-          .join();
-    },
-  );
-  if (text.contains('[') || text.contains('@')) return null;
-  final css = StringBuffer();
-  var index = 0;
-  while (index < text.length) {
-    if (text.startsWith('//', index)) {
-      if (css.isNotEmpty) css.write(' ');
-      index += 2;
-      continue;
-    }
-    if (text[index] == '/') {
-      if (css.isNotEmpty) css.write(' > ');
-      index++;
-      continue;
-    }
-    final next = text.indexOf('/', index);
-    final token =
-        (next < 0 ? text.substring(index) : text.substring(index, next)).trim();
-    if (token.isNotEmpty) css.write(token == '*' ? '*' : token);
-    if (next < 0) break;
-    index = next;
-  }
-  final selector = css.toString().trim();
-  return selector.isEmpty ? null : selector;
 }
 
 bool _jsonRule(String rule, Object document) {
@@ -448,6 +431,12 @@ Element? _asElement(Object document) {
   if (document is Element) return document;
   if (document is String) return parse(document).documentElement;
   return null;
+}
+
+String _markup(Object document) {
+  if (document is String) return document;
+  if (document is Element) return document.outerHtml;
+  return _plain(document);
 }
 
 String _plain(Object document) {
