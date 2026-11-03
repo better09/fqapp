@@ -1540,6 +1540,12 @@ Future<void> openBookDetail(
 }) async {
   // 书旗条目走自己的详情页：它的 bookId 是另一套命名空间，番茄的 DetailPage
   // 会拿这个 id 去查番茄接口，必然查不到。
+  if (!isNovelKind(item.kind)) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('当前只保留小说')));
+    return;
+  }
   if (isShuqiItem(item)) {
     await Navigator.push(
       context,

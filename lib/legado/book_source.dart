@@ -27,9 +27,24 @@ class LegadoBookSource {
 
   Map<String, String> get headers => decodeLegadoHeaders(header);
 
+  /// 校验结果：`ok` 可用，`fail` 站点无响应，`js` 规则跑不了，`skip` 不是文字书源。
+  String? get checkStatus {
+    final value = raw['fqCheck']?.toString();
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  bool get checkedOk => checkStatus == 'ok';
+
   LegadoBookSource withEnabled(bool value) {
     final next = Map<String, dynamic>.from(raw);
     next['enabled'] = value;
+    return LegadoBookSource(next);
+  }
+
+  LegadoBookSource withCheck(String status, {bool? enabled}) {
+    final next = Map<String, dynamic>.from(raw);
+    next['fqCheck'] = status;
+    if (enabled != null) next['enabled'] = enabled;
     return LegadoBookSource(next);
   }
 }

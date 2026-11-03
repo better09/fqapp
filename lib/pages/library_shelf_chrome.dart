@@ -89,13 +89,14 @@ mixin _LibraryShelfChrome on _LibraryPageActions {
                   ),
                 ),
             ],
+            padding: EdgeInsets.zero,
             child: Padding(
-              padding: const EdgeInsets.only(
-                right: ShelfTokens.screenPadding,
-                left: 6,
-                bottom: 2,
+              padding: const EdgeInsets.only(right: ShelfTokens.screenPadding),
+              child: SizedBox(
+                width: 38,
+                height: 38,
+                child: Icon(LucideIcons.ellipsis, size: 21, color: palette.ink),
               ),
-              child: Icon(LucideIcons.ellipsis, size: 22, color: palette.ink),
             ),
           ),
         ],

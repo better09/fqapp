@@ -23,7 +23,7 @@ void main() {
 
     expect(
       bookSourceScopeChoices(sources).map((choice) => choice.label).toList(),
-      ['全部', '玄幻', '都市', '甲书源', '乙书源'],
+      ['全部', '校验可用', '玄幻', '都市'],
     );
     expect(sourcesInScope(sources, 'g:玄幻').map((source) => source.url), [
       'https://a',
@@ -35,6 +35,13 @@ void main() {
     expect(sourcesInScope(sources, '').map((source) => source.url), [
       'https://a',
       'https://b',
+    ]);
+    final checked = [
+      _source('https://a', '甲书源').withCheck('ok'),
+      _source('https://b', '乙书源').withCheck('fail', enabled: false),
+    ];
+    expect(sourcesInScope(checked, 'ok').map((source) => source.url), [
+      'https://a',
     ]);
   });
 
@@ -70,9 +77,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('search-source-book')));
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(ChoiceChip, '全部'), findsOneWidget);
-    expect(find.widgetWithText(ChoiceChip, '玄幻'), findsOneWidget);
-    expect(find.widgetWithText(ChoiceChip, '甲书源'), findsOneWidget);
+    expect(find.byKey(const Key('search-book-scope')), findsOneWidget);
+    expect(find.text('全部'), findsOneWidget);
     expect(find.text('搜索书名'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '斗破');
@@ -84,7 +90,9 @@ void main() {
     expect(find.text('甲书源的斗破'), findsOneWidget);
     expect(find.text('按已添加的书源搜索'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(ChoiceChip, '乙书源'));
+    await tester.tap(find.byKey(const Key('search-book-scope')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('都市').last);
     await tester.pumpAndSettle();
     expect(calls.last.$1, '斗破');
     expect(calls.last.$2, ['https://b']);

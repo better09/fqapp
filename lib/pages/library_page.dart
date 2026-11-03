@@ -48,7 +48,7 @@ part 'library_shelf_widgets.dart';
 
 /// 版式偏好：0 宫格 / 1 双列 / 2 列表，与 [BookshelfLayout] 的枚举下标一致。
 /// 6.0 以前的版本在这里存的是列数 (2..6)，读取时迁移成宫格。
-const _bookshelfLayoutPreference = 'bookshelf_layout';
+const _bookshelfLayoutPreference = bookshelfLayoutPreferenceKey;
 
 /// 顶栏一级 tab：书架 / 浏览历史。只展示小说（[isNovelKind]）。
 const _tabTitles = ['书架', '浏览历史'];
@@ -115,7 +115,7 @@ class LibraryPage extends StatefulWidget {
 /// library_shelf_views.dart）都 `on` 这个 mixin，从而共用同一份状态。
 mixin _LibraryPageStateBase on State<LibraryPage>, WidgetsBindingObserver {
   int _tab = 0;
-  BookshelfLayout _layout = BookshelfLayout.grid;
+  BookshelfLayout _layout = bookshelfLayoutNotifier.value;
   int _layoutGeneration = 0;
   bool _editing = false;
   bool _importingBook = false;
@@ -177,7 +177,8 @@ mixin _LibraryPageStateBase on State<LibraryPage>, WidgetsBindingObserver {
     final books = [
       for (final entry in _shelf)
         if (entry.item.kind == 'book' &&
-            !ImportedBookStore.isLocalBookId(entry.item.id))
+            !ImportedBookStore.isLocalBookId(entry.item.id) &&
+            !ShelfStore.isLegadoItem(entry.item))
           entry.item,
     ];
     var changed = false;
@@ -270,7 +271,7 @@ mixin _LibraryPageStateBase on State<LibraryPage>, WidgetsBindingObserver {
       for (final record in records)
         _ShelfEntry.fromRecord(
           record,
-          byIdentity['${record.item.kind}:${record.item.seriesId ?? record.item.id}'],
+          byIdentity['${record.item.kind}:${ShelfStore.contentIdOf(record.item)}'],
           latestChapterCount: _latestChapterCounts[record.item.id],
         ),
     ];
@@ -312,14 +313,19 @@ mixin _LibraryPageStateBase on State<LibraryPage>, WidgetsBindingObserver {
       }
       if (saved >= BookshelfLayout.values.length) {
         // 旧语义（每行封面数 2..6）迁移成宫格，并把新值写回去。
-        setState(() => _layout = BookshelfLayout.grid);
+        if (_layout != BookshelfLayout.grid) {
+          setState(() => _layout = BookshelfLayout.grid);
+        }
+        bookshelfLayoutNotifier.value = BookshelfLayout.grid;
         await preferences.setInt(
           _bookshelfLayoutPreference,
           BookshelfLayout.grid.index,
         );
         return;
       }
-      setState(() => _layout = BookshelfLayout.values[saved]);
+      final layout = BookshelfLayout.values[saved];
+      bookshelfLayoutNotifier.value = layout;
+      if (_layout != layout) setState(() => _layout = layout);
     } catch (_) {
       // A layout preference is optional; retain the default and all data.
       // Note: .agents/notes/implemented/bug-fix/2026-09-17-persistent-data-and-web-cancellation.md

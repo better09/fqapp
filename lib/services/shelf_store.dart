@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_ce/hive.dart';
 
 import '../models/media_item.dart';
+import '../legado/book_source.dart';
 import 'encrypted_hive.dart';
 
 /// One 加入书架 record.
@@ -51,13 +52,43 @@ class ShelfStore {
   /// from a single episode and must still land on the series.
   static String keyFor(String kind, String id) => '$_keyPrefix$kind:$id';
 
-  static String keyOf(MediaItem item) =>
-      keyFor(item.kind, item.seriesId ?? item.id);
+  /// 同一书源的书共用书源地址作为 seriesId。书架槽位必须用书自己的地址，
+  /// 否则一个书源只能留下最后加入的那一本，进度也对不上。
+  static bool isLegadoItem(MediaItem item) {
+    final seriesId = item.seriesId;
+    return item.source == legadoSourceMark ||
+        (seriesId != null &&
+            seriesId.startsWith('http') &&
+            item.id.startsWith('http') &&
+            seriesId != item.id);
+  }
+
+  static String contentIdOf(MediaItem item) =>
+      isLegadoItem(item) ? item.id : (item.seriesId ?? item.id);
+
+  static String keyOf(MediaItem item) => keyFor(item.kind, contentIdOf(item));
 
   Future<void> init() async {
     if (_openBox != null) return;
     _box = await EncryptedHive.openBox<dynamic>(Hive, boxName);
+    await _migrateLegadoKeys();
     _revision.value++;
+  }
+
+  /// 旧书架把书源地址当成槽位。迁到书自己的地址，避免一本盖掉另一本。
+  Future<void> _migrateLegadoKeys() async {
+    final box = _openBox;
+    if (box == null) return;
+    for (final key in box.keys.toList()) {
+      final raw = box.get(key);
+      if (raw is! Map) continue;
+      final item = _itemFrom(raw);
+      if (item == null || !isLegadoItem(item)) continue;
+      final next = keyOf(item);
+      if (next == key) continue;
+      if (!box.containsKey(next)) await box.put(next, raw);
+      await box.delete(key);
+    }
   }
 
   bool contains(String kind, String id) {
@@ -206,6 +237,7 @@ class ShelfStore {
     'ep': item.ep,
     'seriesId': item.seriesId,
     'episodeId': item.episodeId,
+    'source': item.source,
     'addedAt': addedAt.millisecondsSinceEpoch,
   };
 
@@ -232,6 +264,9 @@ class ShelfStore {
       kind: raw['kind']?.toString() ?? 'book',
       seriesId: raw['seriesId']?.toString(),
       episodeId: raw['episodeId']?.toString(),
+      source: raw['source']?.toString().isNotEmpty == true
+          ? raw['source'].toString()
+          : 'fanqie',
     );
   }
 }

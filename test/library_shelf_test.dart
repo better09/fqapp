@@ -22,6 +22,7 @@ import 'package:fqapp/services/shelf_store.dart';
 import 'package:fqapp/widgets/home/home_design.dart';
 import 'package:fqapp/widgets/home/home_reading_row.dart';
 import 'package:fqapp/widgets/lazy_indexed_stack.dart';
+import 'package:fqapp/widgets/shelf/shelf_design.dart';
 
 import 'support/fakes.dart';
 
@@ -30,6 +31,7 @@ void main() {
   late Directory directory;
 
   setUp(() async {
+    bookshelfLayoutNotifier.value = BookshelfLayout.grid;
     setSingleChapterPrefs({});
     directory = await Directory.systemTemp.createTemp('fqapp-shelf-test-');
     Hive.init(directory.path);
@@ -93,6 +95,31 @@ void main() {
         ShelfStore.keyOf(_item('x', kind: 'video', seriesId: 'series-9')),
         ShelfStore.keyFor('video', 'series-9'),
       );
+    });
+
+    test('同一书源的两本书各自占一个书架槽位', () async {
+      final store = ShelfStore.instance;
+      await store.add(
+        _item(
+          'https://book/1',
+          title: '甲',
+          seriesId: 'https://source',
+          source: 'legado',
+        ),
+      );
+      await store.add(
+        _item(
+          'https://book/2',
+          title: '乙',
+          seriesId: 'https://source',
+          source: 'legado',
+        ),
+      );
+      expect(
+        store.records().map((record) => record.item.id),
+        containsAll(['https://book/1', 'https://book/2']),
+      );
+      expect(store.records().first.item.source, 'legado');
     });
 
     test('损坏的记录不会带崩书架', () async {
@@ -1068,6 +1095,7 @@ MediaItem _item(
   String? title,
   String kind = 'book',
   String? seriesId,
+  String source = 'fanqie',
 }) => MediaItem(
   id: id,
   title: title ?? id,
@@ -1077,4 +1105,5 @@ MediaItem _item(
   ep: '120',
   kind: kind,
   seriesId: seriesId,
+  source: source,
 );

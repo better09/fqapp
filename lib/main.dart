@@ -47,6 +47,7 @@ import 'services/shelf_store.dart';
 import 'services/swipe_guide_store.dart';
 import 'widgets/lazy_indexed_stack.dart';
 import 'widgets/home/home_design.dart';
+import 'widgets/shelf/shelf_design.dart';
 
 Future<void> main() async {
   // 绑定初始化与 runApp 必须处在同一个 Zone：此前 `ensureInitialized` 在
@@ -203,6 +204,7 @@ Future<void> _initializeLocalData() async {
   final sp = await SharedPreferences.getInstance();
   // Note: Optional preference schemas cannot block local data startup; see
   // .agents/notes/implemented/bug-fix/2026-09-17-persistent-data-and-web-cancellation.md.
+  rememberBookshelfLayout(sp.get(bookshelfLayoutPreferenceKey));
   final savedTheme = sp.get(themeModeKey);
   themeModeNotifier.value = themeModeFromName(
     savedTheme is String ? savedTheme : null,
@@ -662,15 +664,14 @@ class _RootShellState extends State<RootShell> {
       // 样式放壳层而不是各页内部，是因为 IndexedStack 里未选中的页不参与
       // 绘制，页内 AnnotatedRegion 切走后会残留上一个页的样式。
       body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value:
-            (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
-                .copyWith(
-                  systemNavigationBarColor: palette.canvas,
-                  systemNavigationBarDividerColor: palette.canvas,
-                  systemNavigationBarIconBrightness: isDark
-                      ? Brightness.light
-                      : Brightness.dark,
-                ),
+        value: (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+            .copyWith(
+              systemNavigationBarColor: palette.canvas,
+              systemNavigationBarDividerColor: palette.canvas,
+              systemNavigationBarIconBrightness: isDark
+                  ? Brightness.light
+                  : Brightness.dark,
+            ),
         child: LazyIndexedStack(
           index: _index,
           children: [

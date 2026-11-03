@@ -29,18 +29,22 @@ extension _BookSourceSearch on _SearchPageState {
     await _loadTab(_tabIndex);
   }
 
-  Future<void> _loadBookSourceCatalog(int generation) async {
-    if (_bookSources.loaded) return;
+  Future<void> _loadBookSourceCatalog() {
+    if (_bookSources.loaded) return Future<void>.value();
+    return _bookSourceCatalogLoad ??= _readBookSourceCatalog();
+  }
+
+  Future<void> _readBookSourceCatalog() async {
     try {
       final catalog =
           await (widget.bookSourceCatalog ?? loadStoredBookSources)();
-      if (!mounted || generation != _requestGeneration) return;
+      if (!mounted) return;
       _rebuild(() {
         _bookSources.catalog = catalog;
         _bookSources.loaded = true;
       });
     } catch (_) {
-      // 范围条先留「全部」，真正搜索时再报错。
+      _bookSourceCatalogLoad = null;
     }
   }
 
@@ -66,7 +70,7 @@ extension _BookSourceSearch on _SearchPageState {
     });
     try {
       if (!_bookSources.loaded) {
-        await _loadBookSourceCatalog(generation);
+        await _loadBookSourceCatalog();
         if (!mounted || generation != _requestGeneration) return;
       }
       final sources = _bookSources.selected;
@@ -146,6 +150,12 @@ extension _BookSourceSearch on _SearchPageState {
       return _feeds.first.items.isEmpty ? '未找到该 ID 对应的作品' : '该分类下没有匹配的作品';
     }
     if (_bookSourceMode && feed.loading) return _bookSourceStatus;
+    if (_bookSourceMode &&
+        _bookSources.loaded &&
+        _bookSources.scopeId == 'ok' &&
+        _bookSources.selected.isEmpty) {
+      return '还没有校验通过的书源，请先在「我的 → 书源」校验';
+    }
     if (_bookSourceMode &&
         _bookSources.loaded &&
         !_bookSources.hasEnabledSource) {

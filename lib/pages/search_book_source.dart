@@ -56,7 +56,7 @@ List<String> bookSourceGroupNames(LegadoBookSource source) => source.group
 List<LegadoBookSource> enabledTextSources(List<LegadoBookSource> sources) =>
     sources.where((source) => source.enabled && source.type == 0).toList();
 
-/// 范围条：全部、每个分组、每条已启用的文字书源。分组和书源都能单独搜。
+/// 范围条：全部、校验可用，以及每个分组。单条书源不放进菜单，避免上百个选项把点击卡住。
 List<BookSourceScopeChoice> bookSourceScopeChoices(
   List<LegadoBookSource> sources,
 ) {
@@ -69,9 +69,8 @@ List<BookSourceScopeChoice> bookSourceScopeChoices(
   }
   return [
     const BookSourceScopeChoice('', '全部'),
+    const BookSourceScopeChoice('ok', '校验可用'),
     for (final group in groups) BookSourceScopeChoice('g:$group', group),
-    for (final source in enabled)
-      BookSourceScopeChoice('s:${source.url}', source.name),
   ];
 }
 
@@ -80,6 +79,9 @@ List<LegadoBookSource> sourcesInScope(
   String scopeId,
 ) {
   final enabled = enabledTextSources(sources);
+  if (scopeId == 'ok') {
+    return enabled.where((source) => source.checkedOk).toList();
+  }
   if (scopeId.startsWith('g:')) {
     final group = scopeId.substring(2);
     return enabled

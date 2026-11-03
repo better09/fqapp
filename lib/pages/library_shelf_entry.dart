@@ -45,9 +45,8 @@ class _ShelfEntry {
     int? latestChapterCount,
   }) => _ShelfEntry(
     item: record.item,
-    selectionKey:
-        '${record.item.kind}:${record.item.seriesId ?? record.item.id}',
-    contentId: record.item.seriesId ?? record.item.id,
+    selectionKey: '${record.item.kind}:${ShelfStore.contentIdOf(record.item)}',
+    contentId: ShelfStore.contentIdOf(record.item),
     addedAt: record.addedAt.millisecondsSinceEpoch,
     readTime: _timeOf(history),
     progress: _progressOf(history),
@@ -123,6 +122,7 @@ class _ShelfEntry {
       if (_finished) return '共$total章·已读完';
       return '${_hasUpdate ? '更新 · ' : ''}第${chapter + 1}章 · 共$total章';
     }
+    if (total != null) return '共$total章';
     final parts = <String>[];
     if (chapter != null && chapter >= 0) parts.add('第${chapter + 1}章');
     final value = progress;
@@ -150,7 +150,7 @@ class _ShelfEntry {
 
   int? get _totalChapterCount =>
       chapterCount != null &&
-      (latestChapterCount == null || latestChapterCount! < chapterCount!)
+          (latestChapterCount == null || latestChapterCount! < chapterCount!)
       ? chapterCount
       : latestChapterCount;
 

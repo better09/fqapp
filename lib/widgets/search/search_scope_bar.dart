@@ -61,6 +61,7 @@ class SearchScopeBar extends StatelessWidget {
   }
 
   Widget _categories(HomePalette palette) {
+    if (origin == SearchOrigin.bookSource) return _bookSourceMenu(palette);
     final list = ListView(
       key: const Key('search-category-tabs'),
       scrollDirection: Axis.horizontal,
@@ -96,6 +97,43 @@ class SearchScopeBar extends StatelessWidget {
             ).createShader(bounds);
           },
           child: list,
+        ),
+      ),
+    );
+  }
+
+  /// 书源分组和「校验可用」放进一个菜单。横向芯片会把每个分组都建出来，点一下就卡。
+  Widget _bookSourceMenu(HomePalette palette) {
+    final label = selectedIndex >= 0 && selectedIndex < categories.length
+        ? categories[selectedIndex]
+        : '全部';
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: PopupMenuButton<int>(
+        key: const Key('search-book-scope'),
+        tooltip: '书源范围',
+        initialValue: selectedIndex,
+        onSelected: onSelectCategory,
+        itemBuilder: (context) => [
+          for (var index = 0; index < categories.length; index++)
+            PopupMenuItem<int>(value: index, child: Text(categories[index])),
+        ],
+        child: Padding(
+          padding: const EdgeInsets.only(left: homeGutter, right: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: palette.ink,
+                ),
+              ),
+              Icon(Icons.arrow_drop_down, color: palette.ink),
+            ],
+          ),
         ),
       ),
     );

@@ -124,6 +124,20 @@ class ShelfTokens {
 /// 旧版完全一致，6.0 以前的「列数」旧值迁移逻辑见 library_page)，also the
 /// order the 更多 menu lists them in, so [BookshelfLayout.values] can be used
 /// directly for both the preference index and the menu.
+const bookshelfLayoutPreferenceKey = 'bookshelf_layout';
+
+/// 启动读完偏好后写入。书架第一帧直接用它，避免先画出宫格再跳到列表。
+final ValueNotifier<BookshelfLayout> bookshelfLayoutNotifier = ValueNotifier(
+  BookshelfLayout.grid,
+);
+
+void rememberBookshelfLayout(Object? saved) {
+  if (saved is! int || saved < 0 || saved >= BookshelfLayout.values.length) {
+    return;
+  }
+  bookshelfLayoutNotifier.value = BookshelfLayout.values[saved];
+}
+
 enum BookshelfLayout {
   grid('切换为宫格', 'grid', LucideIcons.layout_grid),
   doubleColumn('切换为双列', 'double', LucideIcons.columns_2),

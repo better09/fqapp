@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../legado/book_source.dart';
 import '../legado/book_source_store.dart';
+import '../legado/source_check.dart';
 import 'source_search_page.dart';
 
 /// 自定义书源：导入阅读（Legado）的 JSON，再用这些规则搜索和阅读网络内容。
@@ -22,6 +23,7 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       widget.repository ?? HiveBookSourceRepository();
   List<LegadoBookSource> _sources = const [];
   final _query = TextEditingController();
+  bool _checking = false;
 
   @override
   void initState() {
@@ -73,6 +75,56 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
     }
   }
 
+  Future<void> _verify() async {
+    if (_checking) return;
+    if (_sources.isEmpty) {
+      _tell('还没有书源');
+      return;
+    }
+    setState(() => _checking = true);
+    final progress = ValueNotifier(
+      SourceCheckProgress(
+        finished: 0,
+        total: _sources.length,
+        usable: 0,
+        disabled: 0,
+      ),
+    );
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('正在校验书源'),
+        content: ValueListenableBuilder<SourceCheckProgress>(
+          valueListenable: progress,
+          builder: (context, value, _) =>
+              Text('已检查 ${value.finished}/${value.total}'),
+        ),
+      ),
+    );
+    try {
+      final checked = await verifyBookSources(
+        _sources,
+        onProgress: (value) => progress.value = value,
+      );
+      await _save(checked);
+      if (!mounted) return;
+      final usable = checked
+          .where((source) => source.enabled && source.checkedOk)
+          .length;
+      final stopped = checked
+          .where((source) => !source.enabled && source.checkStatus != 'ok')
+          .length;
+      _tell('校验完成：可用 $usable 个，已停用 $stopped 个');
+    } catch (error) {
+      if (mounted) _tell('校验失败：$error');
+    } finally {
+      if (mounted) Navigator.of(context).pop();
+      WidgetsBinding.instance.addPostFrameCallback((_) => progress.dispose());
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
   Future<void> _search() async {
     final keyword = _query.text.trim();
     if (keyword.isEmpty) {
@@ -107,6 +159,12 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       appBar: AppBar(
         title: const Text('书源'),
         actions: [
+          IconButton(
+            key: const Key('book-source-check'),
+            tooltip: '校验书源',
+            onPressed: _checking ? null : _verify,
+            icon: const Icon(Icons.fact_check_outlined),
+          ),
           IconButton(
             key: const Key('book-source-import'),
             tooltip: '导入书源',
@@ -166,7 +224,11 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
         final source = _sources[index];
         final subtitle = [
           if (source.group.isNotEmpty) source.group,
-          if (source.type != 0) '非文字书源，搜索时会跳过',
+          if (source.checkStatus == 'ok') '校验可用',
+          if (source.checkStatus == 'fail') '站点无响应，已停用',
+          if (source.checkStatus == 'js') '含脚本规则，已停用',
+          if (source.checkStatus == 'skip') '无法搜索，已停用',
+          if (source.type != 0 && source.checkStatus == null) '非文字书源，搜索时会跳过',
         ].join(' · ');
         return SwitchListTile(
           title: Text(source.name),

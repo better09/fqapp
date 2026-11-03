@@ -127,6 +127,7 @@ class _SearchPageState extends State<SearchPage> {
   int _fanqieTab = 0;
 
   final BookSourceSearchSession _bookSources = BookSourceSearchSession();
+  Future<void>? _bookSourceCatalogLoad;
   String _bookSourceStatus = '按已添加的书源搜索';
   bool _applyingQuery = false;
 
@@ -400,7 +401,7 @@ class _SearchPageState extends State<SearchPage> {
     ++_requestGeneration;
     if (_query.isEmpty) {
       if (origin == SearchOrigin.bookSource) {
-        unawaited(_loadBookSourceCatalog(_requestGeneration));
+        unawaited(_loadBookSourceCatalog());
       }
       return;
     }

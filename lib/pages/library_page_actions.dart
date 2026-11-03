@@ -24,6 +24,7 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
       // 版式切换后入场动画重播一次（新视图首屏），滚动回看仍不重放。
       _entered.clear();
     });
+    bookshelfLayoutNotifier.value = layout;
     try {
       final preferences = await SharedPreferences.getInstance();
       if (!await preferences.setInt(_bookshelfLayoutPreference, layout.index)) {

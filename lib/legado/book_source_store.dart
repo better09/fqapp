@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:hive_ce/hive.dart';
 
@@ -39,6 +40,8 @@ class HiveBookSourceRepository implements BookSourceRepository {
     final raw = box.get('sources');
     if (raw is! String || raw.trim().isEmpty) return const [];
     try {
+      if (raw.length >= 32768)
+        return await Isolate.run(() => parseBookSources(raw));
       return parseBookSources(raw);
     } catch (_) {
       return const [];

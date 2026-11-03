@@ -875,18 +875,16 @@ class HomeNotifier extends Notifier<HomeState> {
     return _loadAllInterleaved(recommendation);
   }
 
-  /// Degraded path for [loadAll]: the recommendation stream is unavailable, so
-  /// mix whatever the other sources returned.
+  /// 推荐流失败时不再用短剧、漫剧、漫画或听书填首页。
   Future<_FetchedFeed> _loadAllInterleaved(
     _Attempt<_FetchedFeed> recommendation,
-  ) => _assembleAllSources(
-    recommendationFuture: Future.value(recommendation),
-    videoFuture: _attempt(_searchLoader('短剧')),
-    manjuFuture: _attempt(_loadAllManju()),
-    mangaFuture: _attempt(_mangaSearchLoader()),
-    audioFuture: _attempt(_searchLoader('听书')),
-    previous: null,
-  );
+  ) {
+    final page = recommendation.value;
+    if (page == null) {
+      return Future.error(recommendation.error ?? StateError('首页加载失败'));
+    }
+    return Future.value(page);
+  }
 
   /// 「全部」多源兜底页的公共组装。
   ///
@@ -1139,20 +1137,14 @@ class HomeNotifier extends Notifier<HomeState> {
       ..searchPage = feed.searchPages['小说'] ?? 0
       ..recommendExhausted = feed.recommendExhausted;
     bookFeed.seen.addAll(feed.seen);
-    final videoPage = (feed.searchPages['短剧'] ?? 0) + 1;
-    final audioPage = (feed.searchPages['听书'] ?? 0) + 1;
-    final manjuOffset = feed.searchOffsets['漫剧'] ?? 0;
-    final mangaOffset = feed.searchOffsets['漫画'] ?? 0;
     return _assembleAllSources(
       recommendationFuture: _attempt(_loadNext(1, bookFeed)),
-      videoFuture: _attempt(_searchLoader('短剧', page: videoPage)),
-      manjuFuture: feed.manjuSearchExhausted
-          ? Future.value(const _Attempt<_AllManjuGroup>.value(_emptyManjuGroup))
-          : _attempt(_loadManjuSearch(offset: manjuOffset)),
-      mangaFuture: feed.mangaSearchExhausted
-          ? Future.value(const _Attempt<List<SearchTab>>.value([]))
-          : _attempt(_mangaSearchLoader(offset: mangaOffset)),
-      audioFuture: _attempt(_searchLoader('听书', page: audioPage)),
+      videoFuture: Future.value(const _Attempt<List<SearchTab>>.value([])),
+      manjuFuture: Future.value(
+        const _Attempt<_AllManjuGroup>.value(_emptyManjuGroup),
+      ),
+      mangaFuture: Future.value(const _Attempt<List<SearchTab>>.value([])),
+      audioFuture: Future.value(const _Attempt<List<SearchTab>>.value([])),
       previous: feed,
     );
   }
