@@ -85,7 +85,7 @@ void main() {
     expect(find.text('每日记录'), findsNothing);
     expect(find.text('最近封面'), findsNothing);
     await tester.scrollUntilVisible(find.text('关于'), 200);
-    for (final label in ['离线缓存', '备份与导入', '关于']) {
+    for (final label in ['书源', '离线缓存', '备份与导入', '关于']) {
       expect(find.text(label), findsOneWidget);
     }
   });

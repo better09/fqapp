@@ -95,6 +95,10 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
       await _openLocalBook(item);
       return;
     }
+    if (item.source == legadoSourceMark) {
+      await openLegadoShelfItem(context, item);
+      return;
+    }
     final outcome = await openBookInReader(
       context,
       item,
@@ -108,9 +112,9 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
       case BookOpenOutcome.opened:
         return;
       case BookOpenOutcome.unavailable:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('目录加载失败，请检查网络后重试')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('目录加载失败，请检查网络后重试')));
       case BookOpenOutcome.missingImportedChapter:
         // 让用户在目录里自己挑一章，而不是从第一章读起覆盖导入的进度。
         ScaffoldMessenger.of(context).showSnackBar(
@@ -272,9 +276,7 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          '已移出 ${selected.length} 本，阅读记录会保留',
-        ),
+        content: Text('已移出 ${selected.length} 本，阅读记录会保留'),
         duration: const Duration(seconds: 4),
         // 带 action 的 SnackBar 默认 persist，duration 不生效，撤销条会挂在根
         // messenger 上跨页常驻（#211）；读屏时仍保留，好让用户够得到撤销。

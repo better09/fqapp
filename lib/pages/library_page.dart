@@ -32,6 +32,8 @@ import '../widgets/home/home_design.dart';
 import '../widgets/shelf/shelf_design.dart';
 import '../widgets/shelf/shelf_empty.dart';
 import '../widgets/tab_swipe_area.dart';
+import '../legado/book_source.dart';
+import '../legado/open_book.dart';
 import 'cached_book_reader.dart';
 import 'cached_books_page.dart';
 import 'detail_page.dart';

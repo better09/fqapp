@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_lucide/flutter_lucide.dart';
 
 import '../../pages/about_page.dart';
+import '../../pages/book_sources_page.dart';
 import '../../pages/cached_books_page.dart';
 import '../../pages/library_backup_page.dart';
 import '../home/home_design.dart';
 import '../home/home_shelf.dart';
 
-/// 我的 页底部的入口列表：离线缓存 / 备份与导入 / 关于。应用设置在标题栏齿轮。
+/// 我的 页底部的入口列表：书源 / 离线缓存 / 备份与导入 / 关于。应用设置在标题栏齿轮。
 class MineEntries extends StatelessWidget {
   const MineEntries({super.key});
 
@@ -19,6 +20,11 @@ class MineEntries extends StatelessWidget {
       child: Column(
         children: [
           Divider(height: 1, thickness: 0.6, color: palette.line),
+          MineEntryRow(
+            icon: LucideIcons.library,
+            label: '书源',
+            onTap: () => _push(context, const BookSourcesPage()),
+          ),
           MineEntryRow(
             icon: LucideIcons.hard_drive_download,
             label: '离线缓存',
