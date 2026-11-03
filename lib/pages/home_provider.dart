@@ -983,49 +983,6 @@ class HomeNotifier extends Notifier<HomeState> {
     );
   }
 
-  /// The manju group of the combined feed.
-  ///
-  /// Prefers the dedicated manju stream (`tab_type=24`) over search, for the
-  /// same reason the 漫剧 tab already does: the upstream attaches cover badges
-  /// to that stream's cards, while search cells carry mostly uncoloured genre
-  /// labels. The stream has no page cursor, so search still serves the pages
-  /// after the first.
-  Future<_AllManjuGroup> _loadAllManju() async {
-    try {
-      final page = await _fetchHomepage(tabType: tabTypes['漫剧']!);
-      final items = _forceKind(page.items, 'manju');
-      if (items.isNotEmpty) {
-        return (
-          items: items,
-          // Search has not been consulted yet, so paging starts at its first
-          // page and there is still a source to advance to.
-          searchOffset: 0,
-          searchCanAdvance: true,
-          searchExhausted: false,
-          hasMore: true,
-        );
-      }
-    } catch (_) {
-      // Older backends may not expose the stream; fall through to search.
-    }
-    return _loadManjuSearch();
-  }
-
-  /// The manju group served by search alone: the pagination path, and the
-  /// fallback when the dedicated stream has no cards.
-  Future<_AllManjuGroup> _loadManjuSearch({int offset = 0}) async {
-    final tabs = await _manjuSearchLoader(offset: offset);
-    final items = _searchItems(tabs, '漫剧', 'manju');
-    final progress = _searchProgress(tabs, '漫剧', items, offset: offset);
-    return (
-      items: items,
-      searchOffset: progress.nextOffset,
-      searchCanAdvance: progress.hasCursor,
-      searchExhausted: !progress.hasMore,
-      hasMore: progress.hasMore,
-    );
-  }
-
   /// 卡片种类的紧凑统计，给日志用（`book:12,audio:1`）。
   ///
   /// `_forceKind` 会把流转下来的卡片统一重标成本分类的种类，所以这一行是
