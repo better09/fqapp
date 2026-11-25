@@ -17,6 +17,8 @@ import '../widgets/home/home_design.dart';
 import '../widgets/home/home_media_card.dart';
 import '../widgets/home/home_shelf.dart';
 import '../widgets/media_card.dart';
+import '../extension/comic_extension.dart';
+import '../extension/extension_search.dart';
 import '../legado/book_source.dart';
 import '../legado/open_book.dart';
 import '../legado/web_book.dart';
@@ -75,6 +77,9 @@ class SearchPage extends StatefulWidget {
   /// 书源搜索的请求。测试注入后不访问网络。
   final LegadoFetcher? bookSourceFetch;
 
+  /// 漫画源扩展。留空时真实书源库用本机扩展，注入了 [bookSourceCatalog] 则不查扩展。
+  final ComicExtensionClient? comicExtensions;
+
   const SearchPage({
     super.key,
     this.initialQuery,
@@ -87,6 +92,7 @@ class SearchPage extends StatefulWidget {
     this.bookSourceCatalog,
     this.bookSourceQuery,
     this.bookSourceFetch,
+    this.comicExtensions,
     this.initialCategory = SearchCategory.general,
   });
 
@@ -1063,7 +1069,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _openItem(MediaItem item) {
-    if (item.source == legadoSourceMark) {
+    if (isCustomSourceMark(item.source)) {
       unawaited(openLegadoShelfItem(context, item));
       return;
     }

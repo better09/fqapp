@@ -6,7 +6,7 @@ import '../legado/book_source.dart';
 import '../legado/open_book.dart';
 import '../legado/web_book.dart';
 
-/// 用已启用的文字书源搜索，点结果后按规则打开目录和正文。
+/// 用已启用的小说和漫画书源搜索，点结果后按规则打开目录和正文。
 ///
 /// 结果随每个书源返回立刻出现，顶上显示已完成数量，避免慢书源把整页卡住。
 class SourceSearchPage extends StatefulWidget {
@@ -95,7 +95,7 @@ class _SourceSearchPageState extends State<SourceSearchPage> {
   String get _statusText {
     if (_failure != null) return _failure!;
     if (!_reported) return '正在搜索…';
-    if (_total == 0) return '没有启用的文字书源';
+    if (_total == 0) return '没有启用的小说或漫画书源';
     if (_finished < _total) return '正在搜索 $_finished/$_total';
     return '搜索完成 $_finished/$_total';
   }

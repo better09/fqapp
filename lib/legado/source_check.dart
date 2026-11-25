@@ -22,9 +22,9 @@ class SourceCheckProgress {
   });
 }
 
-/// 当前引擎跑不了的书源：不是文字书、缺搜索规则，或规则里有 JavaScript。
+/// 当前引擎跑不了的书源：不是小说或漫画书源、缺搜索规则，或规则里有 JavaScript。
 String? sourceUnusableReason(LegadoBookSource source) {
-  if (source.type != 0) return 'skip';
+  if (!source.readable) return 'skip';
   final searchUrl = source.searchUrl;
   if (searchUrl == null || searchUrl.trim().isEmpty) return 'skip';
   if ((source.search.bookList ?? '').trim().isEmpty) return 'skip';

@@ -1,3 +1,4 @@
+import '../extension/extension_store.dart';
 import '../legado/book_source.dart';
 import '../legado/book_source_store.dart';
 import '../legado/web_book.dart';
@@ -18,13 +19,17 @@ class BookSourceScopeChoice {
   const BookSourceScopeChoice(this.id, this.label);
 }
 
-/// 书城搜索里「书源」来源的范围。空范围表示全部已启用的文字书源。
+/// 书城搜索里「书源」来源的范围。空范围表示全部已启用的小说和漫画书源。
 class BookSourceSearchSession {
   List<LegadoBookSource> catalog = const [];
+
+  /// 已安装的漫画源扩展（Venera 脚本），只算启用的。
+  List<InstalledComicExtension> extensions = const [];
   bool loaded = false;
   String scopeId = '';
 
-  List<BookSourceScopeChoice> get choices => bookSourceScopeChoices(catalog);
+  List<BookSourceScopeChoice> get choices =>
+      bookSourceScopeChoices(catalog, hasExtensions: extensions.isNotEmpty);
 
   int get selectedIndex {
     final index = choices.indexWhere((choice) => choice.id == scopeId);
@@ -33,11 +38,16 @@ class BookSourceSearchSession {
 
   List<LegadoBookSource> get selected => sourcesInScope(catalog, scopeId);
 
+  /// 「全部」和「漫画」范围连同漫画源扩展一起搜。
+  List<InstalledComicExtension> get selectedExtensions =>
+      scopeId == '' || scopeId == 't:comic' ? extensions : const [];
+
   bool get hasEnabledSource =>
-      catalog.any((source) => source.enabled && source.type == 0);
+      extensions.isNotEmpty ||
+      catalog.any((source) => source.enabled && source.readable);
 }
 
-const bookSourceEmptyMessage = '还没有启用的书源，请先在「我的 → 书源」导入';
+const bookSourceEmptyMessage = '还没有启用的书源，请先在「我的 → 书源」导入书源或漫画源';
 
 Future<List<LegadoBookSource>> loadStoredBookSources() =>
     HiveBookSourceRepository().load();
@@ -53,14 +63,17 @@ List<String> bookSourceGroupNames(LegadoBookSource source) => source.group
     .where((part) => part.isNotEmpty)
     .toList();
 
-List<LegadoBookSource> enabledTextSources(List<LegadoBookSource> sources) =>
-    sources.where((source) => source.enabled && source.type == 0).toList();
-
-/// 范围条：全部、校验可用，以及每个分组。单条书源不放进菜单，避免上百个选项把点击卡住。
-List<BookSourceScopeChoice> bookSourceScopeChoices(
+List<LegadoBookSource> enabledReadableSources(
   List<LegadoBookSource> sources,
-) {
-  final enabled = enabledTextSources(sources);
+) => sources.where((source) => source.enabled && source.readable).toList();
+
+/// 范围条：全部、校验可用，有漫画书源或漫画源扩展时再分小说/漫画，以及每个分组。
+/// 单条书源不放进菜单，避免上百个选项把点击卡住。
+List<BookSourceScopeChoice> bookSourceScopeChoices(
+  List<LegadoBookSource> sources, {
+  bool hasExtensions = false,
+}) {
+  final enabled = enabledReadableSources(sources);
   final groups = <String>[];
   for (final source in enabled) {
     for (final name in bookSourceGroupNames(source)) {
@@ -70,6 +83,10 @@ List<BookSourceScopeChoice> bookSourceScopeChoices(
   return [
     const BookSourceScopeChoice('', '全部'),
     const BookSourceScopeChoice('ok', '校验可用'),
+    if (hasExtensions || enabled.any((source) => source.isComic)) ...const [
+      BookSourceScopeChoice('t:text', '小说'),
+      BookSourceScopeChoice('t:comic', '漫画'),
+    ],
     for (final group in groups) BookSourceScopeChoice('g:$group', group),
   ];
 }
@@ -78,9 +95,13 @@ List<LegadoBookSource> sourcesInScope(
   List<LegadoBookSource> sources,
   String scopeId,
 ) {
-  final enabled = enabledTextSources(sources);
+  final enabled = enabledReadableSources(sources);
   if (scopeId == 'ok') {
     return enabled.where((source) => source.checkedOk).toList();
+  }
+  if (scopeId == 't:text' || scopeId == 't:comic') {
+    final comic = scopeId == 't:comic';
+    return enabled.where((source) => source.isComic == comic).toList();
   }
   if (scopeId.startsWith('g:')) {
     final group = scopeId.substring(2);

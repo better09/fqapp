@@ -56,7 +56,7 @@ class ShelfStore {
   /// 否则一个书源只能留下最后加入的那一本，进度也对不上。
   static bool isLegadoItem(MediaItem item) {
     final seriesId = item.seriesId;
-    return item.source == legadoSourceMark ||
+    return isCustomSourceMark(item.source) ||
         (seriesId != null &&
             seriesId.startsWith('http') &&
             item.id.startsWith('http') &&

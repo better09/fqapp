@@ -66,6 +66,7 @@ class _ShelfEntry {
       kind: history['kind']?.toString() ?? 'book',
       seriesId: history['seriesId']?.toString(),
       episodeId: history['episodeId']?.toString(),
+      source: history['source']?.toString() ?? 'fanqie',
     );
     final contentId = historyContentId(history);
     return _ShelfEntry(

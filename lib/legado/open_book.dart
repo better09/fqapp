@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 
+import '../extension/open_extension_comic.dart';
 import '../models/media_item.dart';
+import '../pages/comic_reader_page.dart';
 import '../pages/reader_page.dart';
 import '../services/library_store.dart';
 import 'book_source.dart';
 import 'book_source_store.dart';
+import 'comic_content.dart';
+import 'comic_history.dart';
 import 'web_book.dart';
 
 /// 从书架上的自定义书源条目直接进入阅读器。
 Future<void> openLegadoShelfItem(BuildContext context, MediaItem item) async {
+  if (item.source == comicExtensionMark) {
+    return openExtensionComic(context, item);
+  }
   final sourceUrl = item.seriesId;
   if (sourceUrl == null || sourceUrl.isEmpty) {
     _tell(context, '找不到这本书所属的书源');
@@ -55,8 +62,40 @@ Future<void> openLegadoHit(BuildContext context, LegadoHit hit) async {
   }
   if (!navigator.mounted) return;
   navigator.pop();
-  final startIndex = await _rememberChapterCount(hit, chapters.length);
+  final startIndex = await rememberSourceBook(
+    id: hit.bookUrl,
+    title: hit.name,
+    cover: hit.cover,
+    author: hit.author,
+    source: legadoSourceMark,
+    seriesId: hit.source.url,
+    chapterCount: chapters.length,
+  );
   if (!navigator.mounted) return;
+  if (hit.source.isComic) {
+    await navigator.push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ComicReaderPage(
+          bookId: hit.bookUrl,
+          title: hit.name,
+          cover: hit.cover,
+          chapters: chapters,
+          startIndex: startIndex,
+          readerStore: SourceComicHistory(
+            LibraryStore.instance,
+            source: legadoSourceMark,
+            seriesId: hit.source.url,
+            author: hit.author,
+            chapterCount: chapters.length,
+          ),
+          chapterLoader: (chapter) =>
+              loadLegadoComicImages(hit.source, chapter.itemId),
+          shelfItem: hit.toMediaItem(),
+        ),
+      ),
+    );
+    return;
+  }
   await navigator.push<void>(
     MaterialPageRoute<void>(
       builder: (_) => ReaderPage(
@@ -71,34 +110,6 @@ Future<void> openLegadoHit(BuildContext context, LegadoHit hit) async {
       ),
     ),
   );
-}
-
-/// 目录一出来就把总章数写进阅读记录，书架不用等翻页才知道共多少章。
-/// 已有进度时从那一章接着读，没有进度则不把第 1 章算成已读。
-Future<int> _rememberChapterCount(LegadoHit hit, int chapterCount) async {
-  if (chapterCount <= 0) return 0;
-  try {
-    final existing = await LibraryStore.instance.historyEntry(hit.bookUrl);
-    final episode = existing?['episode'];
-    final start = episode is num && episode >= 0 && episode < chapterCount
-        ? episode.toInt()
-        : 0;
-    await LibraryStore.instance.addHistory({
-      ...?existing,
-      'id': hit.bookUrl,
-      'kind': 'book',
-      'title': hit.name,
-      'bookId': hit.bookUrl,
-      'cover': hit.cover,
-      'author': hit.author,
-      'source': legadoSourceMark,
-      'chapterCount': chapterCount,
-      'time': existing?['time'] ?? DateTime.now().millisecondsSinceEpoch,
-    });
-    return start;
-  } catch (_) {
-    return 0;
-  }
 }
 
 void _tell(BuildContext context, String message) {

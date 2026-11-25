@@ -270,7 +270,7 @@ class HomeMediaCard extends StatelessWidget {
 
   /// 作者 · 第一条推荐理由 · 评分。都是 11sp 的一行灰字，不抢书名。
   static String _metaText(MediaItem item, {bool showLength = false}) {
-    if (item.source == legadoSourceMark) {
+    if (isCustomSourceMark(item.source)) {
       return [
         if (item.author.isNotEmpty) item.author,
         if (item.badge.isNotEmpty) item.badge,

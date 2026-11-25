@@ -42,7 +42,7 @@ class LegadoHit {
     title: name,
     cover: cover,
     author: author,
-    badge: source.name,
+    badge: source.isComic ? '漫画 · ${source.name}' : source.name,
     ep: lastChapter,
     kind: 'book',
     intro: intro,
@@ -184,7 +184,7 @@ Future<LegadoSearchBatch> searchLegadoSources({
   int concurrency = legadoSearchConcurrency,
 }) async {
   final enabled = sources
-      .where((item) => item.enabled && item.type == 0)
+      .where((item) => item.enabled && item.readable)
       .toList();
   final hits = <LegadoHit>[];
   final errors = <String>[];
@@ -463,6 +463,11 @@ String _plainContent(String raw) {
   if (document is! Element) return trimmed;
   return legadoVisibleText(document);
 }
+
+LegadoRequest legadoPageRequest(String url, LegadoBookSource source) =>
+    _get(url, source);
+
+void rejectLegadoJs(List<String?> rules) => _rejectJs(rules);
 
 LegadoRequest _get(String url, LegadoBookSource source) {
   final headers = Map<String, String>.from(source.headers);

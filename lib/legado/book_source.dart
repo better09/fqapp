@@ -3,6 +3,14 @@ import 'dart:convert';
 /// 阅读（Legado）书源里标记「这是自定义网络来源」的 [MediaItem.source]。
 const String legadoSourceMark = 'legado';
 
+/// 漫画源扩展（Venera 脚本）的 [MediaItem.source]，`seriesId` 是扩展 key。
+const String comicExtensionMark = 'venera';
+
+/// 自定义来源（书源或漫画源扩展）的条目：用条目自己的 id 标识，
+/// 列表元信息显示来源名，点开走对应的书源/扩展流程。
+bool isCustomSourceMark(String source) =>
+    source == legadoSourceMark || source == comicExtensionMark;
+
 /// 一条阅读书源。未知字段留在 [raw] 里，导出时原样带回。
 class LegadoBookSource {
   final Map<String, dynamic> raw;
@@ -17,6 +25,10 @@ class LegadoBookSource {
   int get type =>
       raw['bookSourceType'] is int ? raw['bookSourceType'] as int : 0;
   bool get enabled => raw['enabled'] != false;
+
+  /// 阅读的 `bookSourceType`：0 文字，2 图片（漫画），这两类能读。
+  bool get isComic => type == 2;
+  bool get readable => type == 0 || isComic;
   String? get searchUrl => _optional(raw['searchUrl']);
   String? get header => _optional(raw['header']);
 
@@ -27,7 +39,7 @@ class LegadoBookSource {
 
   Map<String, String> get headers => decodeLegadoHeaders(header);
 
-  /// 校验结果：`ok` 可用，`fail` 站点无响应，`js` 规则跑不了，`skip` 不是文字书源。
+  /// 校验结果：`ok` 可用，`fail` 站点无响应，`js` 规则跑不了，`skip` 不是小说或漫画书源。
   String? get checkStatus {
     final value = raw['fqCheck']?.toString();
     return value == null || value.isEmpty ? null : value;

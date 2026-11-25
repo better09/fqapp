@@ -132,10 +132,10 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       return;
     }
     final enabled = _sources.where(
-      (source) => source.enabled && source.type == 0,
+      (source) => source.enabled && source.readable,
     );
     if (enabled.isEmpty) {
-      _tell('没有启用的文字书源');
+      _tell('没有启用的小说或漫画书源');
       return;
     }
     await Navigator.push<void>(
@@ -223,12 +223,14 @@ class _BookSourcesPageState extends State<BookSourcesPage> {
       itemBuilder: (context, index) {
         final source = _sources[index];
         final subtitle = [
+          if (source.isComic) '漫画',
           if (source.group.isNotEmpty) source.group,
           if (source.checkStatus == 'ok') '校验可用',
           if (source.checkStatus == 'fail') '站点无响应，已停用',
           if (source.checkStatus == 'js') '含脚本规则，已停用',
           if (source.checkStatus == 'skip') '无法搜索，已停用',
-          if (source.type != 0 && source.checkStatus == null) '非文字书源，搜索时会跳过',
+          if (!source.readable && source.checkStatus == null)
+            '音频等书源，搜索时会跳过',
         ].join(' · ');
         return SwitchListTile(
           title: Text(source.name),

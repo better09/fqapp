@@ -96,7 +96,7 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
       await _openLocalBook(item);
       return;
     }
-    if (item.source == legadoSourceMark) {
+    if (isCustomSourceMark(item.source)) {
       await openLegadoShelfItem(context, item);
       return;
     }

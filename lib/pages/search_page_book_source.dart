@@ -34,13 +34,22 @@ extension _BookSourceSearch on _SearchPageState {
     return _bookSourceCatalogLoad ??= _readBookSourceCatalog();
   }
 
+  ComicExtensionClient? get _comicExtensions =>
+      widget.comicExtensions ??
+      (widget.bookSourceCatalog == null ? ComicExtensionRuntime.shared : null);
+
   Future<void> _readBookSourceCatalog() async {
     try {
       final catalog =
           await (widget.bookSourceCatalog ?? loadStoredBookSources)();
+      final extensions = await _comicExtensions?.installed() ?? const [];
       if (!mounted) return;
       _rebuild(() {
         _bookSources.catalog = catalog;
+        _bookSources.extensions = [
+          for (final extension in extensions)
+            if (extension.enabled) extension,
+        ];
         _bookSources.loaded = true;
       });
     } catch (_) {
@@ -61,7 +70,7 @@ extension _BookSourceSearch on _SearchPageState {
     unawaited(_searchBookSources(_query, _requestGeneration));
   }
 
-  /// 按当前范围同时查已启用的文字书源，每返回一个书源就刷新一次结果。
+  /// 按当前范围同时查已启用的小说和漫画书源，每返回一个书源就刷新一次结果。
   Future<void> _searchBookSources(String query, int generation) async {
     final feed = _feeds[0];
     _rebuild(() {
@@ -74,7 +83,8 @@ extension _BookSourceSearch on _SearchPageState {
         if (!mounted || generation != _requestGeneration) return;
       }
       final sources = _bookSources.selected;
-      if (sources.isEmpty) {
+      final extensions = _bookSources.selectedExtensions;
+      if (sources.isEmpty && extensions.isEmpty) {
         _rebuild(() {
           feed.items.clear();
           feed.initialized = true;
@@ -83,29 +93,45 @@ extension _BookSourceSearch on _SearchPageState {
         });
         return;
       }
-      if (widget.bookSourceQuery != null) {
-        final batch = await widget.bookSourceQuery!(
-          sources: sources,
-          keyword: query,
-        );
-        if (!mounted || generation != _requestGeneration) return;
-        _applyBookHits(feed, batch.hits, batch.errors, done: true);
-        return;
-      }
-      await searchLegadoSources(
-        sources: sources,
-        keyword: query,
-        fetch: widget.bookSourceFetch ?? fetchLegado,
-        isCancelled: () => !mounted || generation != _requestGeneration,
-        onProgress: (progress) => _applyBookHits(
+      final merged = _MergedSourceSearch(
+        (items, errors, done, finished, total) => _applyBookHits(
           feed,
-          progress.hits,
-          progress.errors,
-          done: progress.done,
-          finished: progress.finished,
-          total: progress.total,
+          items,
+          errors,
+          done: done,
+          finished: finished,
+          total: total,
         ),
+        hasBooks: sources.isNotEmpty,
+        hasComics: extensions.isNotEmpty,
       );
+      bool cancelled() => !mounted || generation != _requestGeneration;
+      await Future.wait([
+        if (extensions.isNotEmpty)
+          searchComicExtensions(
+            client: _comicExtensions!,
+            extensions: extensions,
+            keyword: query,
+            isCancelled: cancelled,
+            onProgress: merged.comics,
+          ).then((progress) {
+            if (!cancelled()) merged.comicsDone(progress);
+          }),
+        if (sources.isNotEmpty && widget.bookSourceQuery != null)
+          widget.bookSourceQuery!(sources: sources, keyword: query).then(
+            (batch) {
+              if (!cancelled()) merged.booksDone(batch.hits, batch.errors);
+            },
+          ),
+        if (sources.isNotEmpty && widget.bookSourceQuery == null)
+          searchLegadoSources(
+            sources: sources,
+            keyword: query,
+            fetch: widget.bookSourceFetch ?? fetchLegado,
+            isCancelled: cancelled,
+            onProgress: merged.books,
+          ),
+      ]);
     } catch (error) {
       if (!mounted || generation != _requestGeneration) return;
       _rebuild(() {
@@ -117,14 +143,13 @@ extension _BookSourceSearch on _SearchPageState {
 
   void _applyBookHits(
     _SearchFeed feed,
-    List<LegadoHit> hits,
+    List<MediaItem> items,
     List<String> errors, {
     required bool done,
     int finished = 0,
     int total = 0,
   }) {
     if (!mounted) return;
-    final items = [for (final hit in hits) hit.toMediaItem()];
     final failed = errors.isEmpty ? '' : '，${errors.length} 个书源失败';
     _rebuild(() {
       feed.items
@@ -166,7 +191,7 @@ extension _BookSourceSearch on _SearchPageState {
   }
 
   String _resultMeta(MediaItem item) {
-    if (item.source == legadoSourceMark) {
+    if (isCustomSourceMark(item.source)) {
       return [
         if (item.author.isNotEmpty) item.author,
         if (item.badge.isNotEmpty) item.badge,
@@ -182,5 +207,71 @@ extension _BookSourceSearch on _SearchPageState {
       else if (!isShuqiItem(item))
         '暂无评分',
     ].join(' · ');
+  }
+}
+
+typedef _MergedReport =
+    void Function(
+      List<MediaItem> items,
+      List<String> errors,
+      bool done,
+      int finished,
+      int total,
+    );
+
+/// 书源和漫画源扩展各自汇报进度，这里合成一份结果：书源结果在前。
+class _MergedSourceSearch {
+  _MergedSourceSearch(
+    this._report, {
+    required bool hasBooks,
+    required bool hasComics,
+  }) : _booksDone = !hasBooks,
+       _comicsDone = !hasComics;
+
+  final _MergedReport _report;
+  List<MediaItem> _books = const [];
+  List<String> _bookErrors = const [];
+  int _bookFinished = 0;
+  int _bookTotal = 0;
+  bool _booksDone;
+  ExtensionSearchProgress? _comics;
+  bool _comicsDone;
+
+  void books(LegadoSearchProgress progress) {
+    _books = [for (final hit in progress.hits) hit.toMediaItem()];
+    _bookErrors = progress.errors;
+    _bookFinished = progress.finished;
+    _bookTotal = progress.total;
+    _booksDone = progress.done;
+    _emit();
+  }
+
+  void booksDone(List<LegadoHit> hits, List<String> errors) {
+    _books = [for (final hit in hits) hit.toMediaItem()];
+    _bookErrors = errors;
+    _booksDone = true;
+    _emit();
+  }
+
+  void comics(ExtensionSearchProgress progress) {
+    _comics = progress;
+    _emit();
+  }
+
+  void comicsDone(ExtensionSearchProgress progress) {
+    _comics = progress;
+    _comicsDone = true;
+    _emit();
+  }
+
+  void _emit() {
+    final comics = _comics;
+    _report(
+      [..._books, ...?comics?.items],
+      [..._bookErrors, ...?comics?.errors],
+      _booksDone && _comicsDone,
+      _bookFinished + (comics?.finished ?? 0),
+      _bookTotal + (comics?.total ?? 0),
+    );
   }
 }
