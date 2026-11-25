@@ -31,9 +31,9 @@ subprojects {
     if (name == "flutter_qjs") {
         pluginManager.withPlugin("com.android.library") {
             extensions.getByName("android").withGroovyBuilder {
-                "getDefaultConfig"().withGroovyBuilder {
-                    "getExternalNativeBuild"().withGroovyBuilder {
-                        "getCmake"().withGroovyBuilder {
+                "getDefaultConfig"()!!.withGroovyBuilder {
+                    "getExternalNativeBuild"()!!.withGroovyBuilder {
+                        "getCmake"()!!.withGroovyBuilder {
                             "arguments"(
                                 "-DCMAKE_SHARED_LINKER_FLAGS=" +
                                     "-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384",
